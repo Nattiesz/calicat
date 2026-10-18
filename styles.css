@@ -1463,3 +1463,15 @@ img { display: block; }
 .plan-badge.ok { background: rgba(105, 148, 7, .12); color: var(--green); }
 .plan-badge.over { background: rgba(240, 125, 181, .14); color: #C2427F; }
 .plan-badge.none { background: rgba(255, 255, 255, .7); color: var(--ink-2); }
+
+/* เริ่มใหม่ */
+.reset-opts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.reset-opt { display: flex; align-items: flex-start; gap: 12px; padding: 14px; border-radius: 18px; border: 1.5px solid var(--line); background: #fff; text-align: left; transition: all .15s; }
+.reset-opt b { display: block; font-size: 15px; }
+.reset-opt small { font-size: 12.5px; color: var(--ink-2); line-height: 1.4; }
+.ro-dot { width: 20px; height: 20px; border-radius: 50%; border: 2px solid rgba(79, 35, 23, .25); flex: none; margin-top: 1px; position: relative; }
+.reset-opt.on { border-color: var(--green); background: rgba(105, 148, 7, .06); }
+.reset-opt.on .ro-dot { border-color: var(--green); }
+.reset-opt.on .ro-dot::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--green); }
+.reset-sheet .warn-box { margin-top: 0; }
+.empty-acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }

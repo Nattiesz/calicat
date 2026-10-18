@@ -211,7 +211,7 @@ const BASE_ING = {};
 for (const [id, name, cat, kcal, units = {}, opt = {}] of ING_DATA) BASE_ING[id] = { id, name, cat, kcal, units, ...opt };
 function buildIng() {
   ING = {};
-  for (const id in BASE_ING) ING[id] = { ...BASE_ING[id], builtin: true };
+  if (!state.settings.noBase) for (const id in BASE_ING) ING[id] = { ...BASE_ING[id], builtin: true };
   for (const [id, o] of Object.entries(state.ingMeta || {})) if (ING[id]) ING[id] = { ...ING[id], ...o, edited: Object.keys(o).some((k) => k !== 'active') };
   for (const c of state.customIngs) ING[c.id] = { units: {}, ...c, custom: true };
   ING_BY_NAME = new Map(Object.values(ING).map((i) => [i.name.trim().toLowerCase(), i]));
@@ -626,6 +626,7 @@ function pageMenus() {
 }
 function menuGrid() {
   const list = state.recipes.filter((r) => (ui.menuType === 'all' || r.type === ui.menuType) && recipeMatches(r, ui.menuQ));
+  if (!state.recipes.length) return emptyState('สมุดเมนูยังว่างอยู่<br>เริ่มสร้างเมนูแรกของคุณได้เลย', `<div class="empty-acts"><button class="btn primary" data-act="new-recipe">${ic('plus')} สร้างเมนูแรก</button><button class="btn ghost" data-act="restore-samples" data-what="recipes">ใช้เมนูตัวอย่าง ${SEED_RECIPES.length} เมนู</button></div>`);
   if (!list.length) return emptyState('ไม่เจอเมนูนี้เลย', `<button class="btn primary" data-act="new-recipe" data-name="${esc(ui.menuQ)}">${ic('plus')} สร้างเมนู “${esc(ui.menuQ || 'ใหม่')}”</button>`);
   return list.map((r) => recipeCard(r)).join('');
 }
@@ -854,7 +855,7 @@ function prefBox(k, title, desc, quick) {
       <label class="combo-box">${ic('search')}<input data-combo-in="${k}" placeholder="ค้นหาวัตถุดิบ เช่น กุ้ง ผักชี" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list"><span class="combo-caret">${ic('right')}</span></label>
       <div class="combo-drop" hidden><div class="combo-pop" role="listbox"></div></div>
     </div>
-    <div class="pb-quick">${quick.map(([l, ids]) => { const all = ids.every((x) => sel.includes(x)); return `<button class="qchip ${all ? 'on' : ''}" ${all ? 'disabled' : ''} data-act="pref-add" data-k="${k}" data-ids="${ids.join(',')}">${all ? ic('check') : ic('plus')}${l}</button>`; }).join('')}</div>
+    <div class="pb-quick">${quick.map(([l, ids]) => [l, ids.filter((x) => ING[x])]).filter(([, ids]) => ids.length).map(([l, ids]) => { const all = ids.every((x) => sel.includes(x)); return `<button class="qchip ${all ? 'on' : ''}" ${all ? 'disabled' : ''} data-act="pref-add" data-k="${k}" data-ids="${ids.join(',')}">${all ? ic('check') : ic('plus')}${l}</button>`; }).join('')}</div>
   </div>`;
 }
 function pageMe() {
@@ -961,6 +962,7 @@ function ingTableHTML() {
   ui.ingPage = Math.min(Math.max(1, ui.ingPage), pages);
   const rows = list.slice((ui.ingPage - 1) * ING_PAGE, ui.ingPage * ING_PAGE);
   const al = new Set(state.profile.allergies || []), dl = new Set(state.profile.dislikes || []);
+  if (!Object.keys(ING).length) return `<div class="tile-empty"><p>ยังไม่มีวัตถุดิบเลย เริ่มเพิ่มของคุณเองได้เลย</p><div class="empty-acts"><button class="btn primary sm" data-act="ing-edit">${ic('plus')} เพิ่มวัตถุดิบแรก</button><button class="btn ghost sm" data-act="restore-samples" data-what="ings">ใช้วัตถุดิบตั้งต้น ${Object.keys(BASE_ING).length} อย่าง</button></div></div>`;
   if (!rows.length) return `<p class="muted center pad">ไม่เจอวัตถุดิบที่ตรงกับตัวกรอง</p>`;
   return `<div class="ing-rows-list">${rows.map((i) => `<div class="ing-item ${isActive(i) ? '' : 'off'}">
       <span class="ii-wrap">${ingImg(i.id, 'ii lg')}</span>
@@ -1364,6 +1366,45 @@ function openCropper(file) {
   img.src = url;
 }
 
+/* เริ่มใหม่: แบบมีตัวอย่าง หรือเริ่มจาก 0 */
+function openResetModal() {
+  const ctx = { mode: 'blank', keep: true, typed: '' };
+  const m = openModal('', {
+    cls: 'small reset-sheet',
+    onClick: (e) => {
+      const b = e.target.closest('[data-m]'); if (!b) return;
+      if (b.dataset.m === 'mode') ctx.mode = b.dataset.v;
+      if (b.dataset.m === 'keep') ctx.keep = !ctx.keep;
+      if (b.dataset.m === 'go') return doReset();
+      draw();
+    },
+  });
+  function draw() {
+    m.sheet.innerHTML = `<div class="modal-head"><div><p class="eyebrow">ล้างข้อมูล</p><h3>เริ่มใหม่ทั้งหมด</h3></div>${closeBtn}</div>
+      <div class="reset-opts">
+        <button class="reset-opt ${ctx.mode === 'blank' ? 'on' : ''}" data-m="mode" data-v="blank"><span class="ro-dot"></span><span><b>เริ่มจาก 0</b><small>ไม่มีเมนู ไม่มีวัตถุดิบ ไม่มีแพลน สร้างเองทั้งหมด</small></span></button>
+        <button class="reset-opt ${ctx.mode === 'sample' ? 'on' : ''}" data-m="mode" data-v="sample"><span class="ro-dot"></span><span><b>เริ่มใหม่แบบมีตัวอย่าง</b><small>เมนูตัวอย่าง ${SEED_RECIPES.length} เมนู วัตถุดิบ ${Object.keys(BASE_ING).length} อย่าง และแพลนตัวอย่าง 1 สัปดาห์</small></span></button>
+      </div>
+      <button class="eat-toggle ${ctx.keep ? 'on' : ''}" data-m="keep"><span class="et-box">${ic('check')}</span><span><b>เก็บโปรไฟล์ไว้</b><small>ชื่อ รูปโปรไฟล์ เป้าหมาย อาหารที่แพ้/ไม่ชอบ และการตั้งค่า</small></span></button>
+      <div class="warn-box allergy"><b>ลบแล้วกู้คืนไม่ได้</b> แนะนำให้กด “สำรองข้อมูล” เก็บไว้ก่อน</div>
+      <div class="modal-foot"><button class="btn ghost" data-act="export">${ic('download')} สำรองก่อน</button><span class="grow"></span><button class="btn ghost" data-act="close">ยกเลิก</button><button class="btn danger" data-m="go">${ic('trash')} ล้างข้อมูล</button></div>`;
+  }
+  function doReset() {
+    const old = state, fresh = defaultState();
+    if (ctx.keep) { fresh.settings = { ...old.settings }; fresh.profile = { ...old.profile }; }
+    if (ctx.mode === 'blank') {
+      fresh.settings.noBase = true; fresh.recipes = []; fresh.fridge = [];
+      fresh.profile.allergies = []; fresh.profile.dislikes = []; // วัตถุดิบถูกล้าง เลยล้างรายการแพ้/ไม่ชอบด้วย
+    } else {
+      fresh.settings.noBase = false; state = fresh; seedDemo(fresh);
+      if (ctx.keep) { fresh.profile.allergies = old.profile.allergies || []; fresh.profile.dislikes = old.profile.dislikes || []; }
+    }
+    state = fresh; buildIng(); save(); closeModal(m); render();
+    toast(ctx.mode === 'blank' ? 'เริ่มจาก 0 แล้ว เพิ่มเมนูแรกได้เลย' : 'เริ่มใหม่แบบมีตัวอย่างแล้ว');
+  }
+  draw();
+}
+
 /* ย่อรูปที่อัปโหลดให้เล็กลงก่อนเก็บ */
 function resizeImage(file, max = 720) {
   return new Promise((res, rej) => {
@@ -1699,9 +1740,14 @@ const ACTIONS = {
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     toast('ดาวน์โหลดไฟล์สำรองแล้ว');
   },
-  'reset-all': async () => {
-    if (!(await confirmBox('ลบข้อมูลทั้งหมดแล้วเริ่มใหม่?<br><small>แพลน เมนูที่สร้างเอง และการตั้งค่าจะหายหมด</small>', 'เริ่มใหม่', true))) return;
-    localStorage.removeItem(STORE_KEY); state = load(); buildIng(); render(); toast('เริ่มต้นใหม่แล้ว');
+  'reset-all': () => openResetModal(),
+  'restore-samples': async ({ what }) => {
+    const withRecipes = what === 'recipes';
+    const msg = withRecipes ? `เพิ่มเมนูตัวอย่าง ${SEED_RECIPES.length} เมนู?<br><small>วัตถุดิบตั้งต้นจะถูกเปิดใช้ด้วย เพราะเมนูตัวอย่างใช้วัตถุดิบเหล่านี้</small>` : `เปิดใช้วัตถุดิบตั้งต้น ${Object.keys(BASE_ING).length} อย่าง?<br><small>วัตถุดิบที่คุณเพิ่มเองยังอยู่ครบ</small>`;
+    if (!(await confirmBox(msg, 'เพิ่มเลย'))) return;
+    state.settings.noBase = false;
+    if (withRecipes) { const have = new Set(state.recipes.map((r) => r.id)); state.recipes.push(...seedRecipes().filter((r) => !have.has(r.id))); }
+    buildIng(); save(); refreshAll(); toast(withRecipes ? 'เพิ่มเมนูตัวอย่างแล้ว' : 'เปิดใช้วัตถุดิบตั้งต้นแล้ว');
   },
 };
 function closeAllModals() { while (modals.length) closeModal(); }
