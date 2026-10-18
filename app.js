@@ -317,7 +317,7 @@ const ui = {
 /* ---------- toast ---------- */
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
-  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2000);
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), Math.max(2000, msg.length * 70));
 }
 
 /* ---------- modals ---------- */
@@ -1640,17 +1640,31 @@ const ACTIONS = {
   'fill-random': async () => {
     const keys = viewKeys();
     const what = ui.view === 'week' ? 'สัปดาห์นี้' : ui.view === 'month' ? 'เดือนนี้' : `ทั้งปี (${keys.length} วัน)`;
-    if (!(await confirmBox(`สุ่มเมนูใส่ช่องที่ยังว่างของ${what}?<br><small>มื้อที่มีเมนูอยู่แล้วจะไม่ถูกแตะ</small>`, 'สุ่มเลย'))) return;
-    let n = 0; const last = {};
+    // ยังไม่มีเมนูให้สุ่มเลย
+    if (!state.recipes.some((r) => r.type !== 'base' && !isAvoided(r))) {
+      const m = openModal(`<div class="confirm">${catSVG()}<p>ยังไม่มีเมนูให้สุ่ม<br><small>${state.recipes.length ? 'เมนูที่มีอยู่เป็นข้าว/แป้ง หรือมีของที่คุณแพ้ทั้งหมด' : 'สมุดเมนูยังว่างอยู่'} — สร้างเมนูก่อน แล้วค่อยกดสุ่มอีกครั้งนะ</small></p>
+        <div class="modal-foot"><button class="btn ghost" data-act="close">ปิด</button>${!state.recipes.length ? `<button class="btn ghost" data-m="samples">ใช้เมนูตัวอย่าง</button>` : ''}<button class="btn primary" data-m="new">${ic('plus')} สร้างเมนู</button></div></div>`,
+        { cls: 'small', onClick: (e) => { const b = e.target.closest('[data-m]'); if (!b) return; closeModal(m); if (b.dataset.m === 'new') openEditor(null); else ACTIONS['restore-samples']({ what: 'recipes' }); } });
+      return;
+    }
+    const empty = []; for (const k of keys) for (const s of daySlots(k)) if (!state.plan[k]?.m?.[s]?.length) empty.push([k, s]);
+    if (!empty.length) return toast(`ทุกมื้อของ${what}มีเมนูแล้ว`);
+    if (!(await confirmBox(`สุ่มเมนูใส่มื้อที่ยังว่าง ${empty.length} มื้อของ${what}?<br><small>มื้อที่มีเมนูอยู่แล้วจะไม่ถูกแตะ</small>`, 'สุ่มเลย'))) return;
+    let n = 0; const last = {}, noMenu = new Set();
     for (const k of keys) for (const s of daySlots(k)) {
+      const cur = state.plan[k]?.m?.[s];
+      if (cur?.length) { last[s] = cur[0].rid; continue; }
+      const r = pickRandom(s, last[s]); if (!r) { noMenu.add(s); continue; }
       const d = getDay(k, true);
-      if (d.m[s]?.length) { last[s] = d.m[s][0].rid; continue; }
-      const r = pickRandom(s, last[s]); if (!r) continue;
       d.m[s] = [{ rid: r.id, s: 1 }];
       if (r.type === 'side' && rec('r_rice')) d.m[s].push({ rid: 'r_rice', s: 1 });
       last[s] = r.id; n++;
     }
-    save(); refreshAll(); toast(n ? `เติมให้แล้ว ${n} มื้อ` : 'ไม่มีช่องว่างให้เติมแล้ว');
+    save(); refreshAll();
+    const miss = [...noMenu].map((s) => SLOTS[s].label).join(', ');
+    if (!n) toast(`ยังไม่มีเมนูที่ตั้งว่าเหมาะกับ${miss} — แก้ไขเมนูแล้วเลือก “เหมาะกับมื้อ” ก่อนนะ`);
+    else if (noMenu.size) toast(`เติมให้ ${n} มื้อ · ${miss} ยังไม่มีเมนูที่เหมาะ`);
+    else toast(`เติมให้แล้ว ${n} มื้อ`);
   },
   'copy-prev': async () => {
     const keys = weekKeys(ui.cursor), prev = weekKeys(addDays(ui.cursor, -7));
