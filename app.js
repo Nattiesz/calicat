@@ -383,16 +383,15 @@ function greet() {
 }
 function heroHTML() {
   const t = new Date(), k = keyOf(t), kc = dayKcal(k), goal = state.settings.goal, items = allItems(k), left = goal - kc;
-  const ml = state.water?.[k] || 0, wg = state.settings.waterGoal || 2000;
+  const ml = state.water?.[k] || 0, wg = state.settings.waterGoal || 2000, ek = eatenKcal(k);
   return `<section class="hero">
     <div class="hero-card grain">
       <p class="eyebrow">วัน${TH_DOW[t.getDay()]} · ${t.getDate()} ${TH_MON[t.getMonth()]} ${be(t.getFullYear())}</p>
       <h1>${greet()}<em>วันนี้กินอะไรดีนะ?</em></h1>
       <div class="hero-kcal">
-        <div class="hk-ring">${ring(kc, goal, 88, 9)}<span>${goal ? Math.round((kc / goal) * 100) : 0}%</span></div>
-        <div class="hk-text"><p class="hk-num"><b>${fmt(kc)}</b><small> / ${fmt(goal)} kcal</small></p>
-          <p class="hk-note">${kc ? (left >= 0 ? `เหลืออีก ${fmt(left)} kcal สำหรับวันนี้` : `เกินเป้ามา ${fmt(-left)} kcal`) : 'ยังไม่ได้แพลนวันนี้เลย'}</p>
-          ${items.length ? `<p class="hk-eaten"><i style="width:${kc ? Math.min(100, (eatenKcal(k) / kc) * 100) : 0}%"></i><span>กินแล้ว ${fmt(eatenKcal(k))} kcal · ${items.filter((x) => x.eaten).length}/${items.length} รายการ</span></p>` : ''}</div>
+        <div class="hk-ring">${ring(ek, goal, 88, 9)}<span>${goal ? Math.round((ek / goal) * 100) : 0}%</span></div>
+        <div class="hk-text"><p class="hk-label">กินไปแล้ววันนี้</p><p class="hk-num"><b>${fmt(ek)}</b><small> / ${fmt(goal)} kcal</small></p>
+          ${items.length ? `<span class="plan-badge ${status(kc)}">แพลนไว้ <b>${fmt(kc)}</b> / ${fmt(goal)}</span>` : `<span class="plan-badge none">ยังไม่ได้แพลน</span>`}</div>
       </div>
       ${items.length ? `<ul class="hero-meals">${items.slice(0, 5).map(({ r, s, slot, eaten }) => `<li class="${eaten ? 'eaten' : ''}">
         <span class="hm-slot">${SLOTS[slot].short}</span>${r.quick && !r.img ? `<span class="ph xs q-ph">${ic('cart')}</span>` : photo(r, 80, 'xs')}<span class="hm-nm">${esc(r.name)}${eaten ? ` ${ic('check')}` : ''}</span><span class="hm-k">${fmt(perServing(r) * num(s, 1))}</span></li>`).join('')}
@@ -851,7 +850,10 @@ function prefBox(k, title, desc, quick) {
     <div class="pb-head"><h3>${title}</h3><span class="pb-count">${sel.length}</span></div>
     <p class="muted small">${desc}</p>
     <div class="pb-chips">${sel.length ? sel.map((id) => `<button class="pchip" data-act="pref-del" data-k="${k}" data-id="${id}">${ingImg(id)}${esc(ING[id].name)}${ic('x')}</button>`).join('') : '<span class="muted small">ยังไม่ได้เลือก</span>'}</div>
-    <label class="search sm">${ic('search')}<input list="ing-list" data-prefin="${k}" placeholder="พิมพ์ชื่อวัตถุดิบ" autocomplete="off"></label>
+    <div class="combo" data-combo="${k}">
+      <label class="combo-box">${ic('search')}<input data-combo-in="${k}" placeholder="ค้นหาวัตถุดิบ เช่น กุ้ง ผักชี" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list"><span class="combo-caret">${ic('right')}</span></label>
+      <div class="combo-drop" hidden><div class="combo-pop" role="listbox"></div></div>
+    </div>
     <div class="pb-quick">${quick.map(([l, ids]) => { const all = ids.every((x) => sel.includes(x)); return `<button class="qchip ${all ? 'on' : ''}" ${all ? 'disabled' : ''} data-act="pref-add" data-k="${k}" data-ids="${ids.join(',')}">${all ? ic('check') : ic('plus')}${l}</button>`; }).join('')}</div>
   </div>`;
 }
@@ -931,7 +933,6 @@ function pageMe() {
           ${prefBox('dislikes', 'ไม่ชอบทาน', 'ยังกินเมนูนั้นได้ตามปกติ แค่มีป้ายบอกว่ามีส่วนผสมนี้ ตอนทำจะได้ไม่ต้องใส่', [['ผักชี', ['coriander']], ['ต้นหอม', ['spring_onion']], ['ขึ้นฉ่าย', ['celery']], ['พริก', ['chili']], ['หอมใหญ่', ['onion']], ['ขิง', ['ginger']], ['เนื้อวัว', ['beef']], ['มะเขือเปราะ', ['thai_eggplant']]])}
         </div>
       </section>
-      <p class="muted small credits">รูปอาหารจาก <a href="https://unsplash.com/?utm_source=calicat&utm_medium=referral" target="_blank" rel="noopener">Unsplash</a> (Unsplash License) · รูปวัตถุดิบ 3D จาก <a href="https://github.com/microsoft/fluentui-emoji" target="_blank" rel="noopener">Microsoft Fluent Emoji</a> (MIT)</p>
     </div>
   </div>`;
 }
@@ -1729,7 +1730,6 @@ document.addEventListener('change', (e) => {
   if (t.id === 'set-goal') { state.settings.goal = Math.min(6000, Math.max(800, Math.round(num(t.value, 1800)))); t.value = state.settings.goal; save(); renderHeader(); renderMain(false); toast('บันทึกเป้าหมายแล้ว'); }
   if ('fonly' in t.dataset) { ui.fridgeOnly = t.checked; $('#tile-grid').innerHTML = fridgeTiles(); }
   if (t.dataset.ingtoggle) { setIngActive(t.dataset.ingtoggle, t.checked); renderMain(false); toast(t.checked ? 'เปิดใช้งานแล้ว' : 'ปิดใช้งานแล้ว'); }
-  if (t.dataset.prefin) { const f = findIng(t.value); if (f) ACTIONS['pref-add']({ k: t.dataset.prefin, ids: f.id }); else if (t.value.trim()) toast('ไม่เจอวัตถุดิบนี้ ลองเลือกจากรายการนะ'); }
   if (t.id === 'avatar-file' && t.files[0]) { openCropper(t.files[0]); t.value = ''; }
   if (t.id === 'set-water') { state.settings.waterGoal = Math.min(6000, Math.max(500, Math.round(num(t.value, 2000)))); t.value = state.settings.waterGoal; save(); renderMain(false); toast('บันทึกเป้าหมายดื่มน้ำแล้ว'); }
   if (t.id === 'set-ws') { state.settings.weekStart = +t.value; save(); toast('บันทึกแล้ว'); }
@@ -1748,6 +1748,79 @@ document.addEventListener('change', (e) => {
     fr.readAsText(t.files[0]); t.value = '';
   }
 });
+
+/* ---------- ช่องค้นหาวัตถุดิบแบบ select2 (ใช้ในอาหารที่แพ้/ไม่ชอบ) ---------- */
+const combo = { k: null, list: [], hi: 0, q: '' };
+function comboItems(k, q) {
+  const taken = new Set([...(state.profile.allergies || []), ...(state.profile.dislikes || [])]);
+  q = q.trim().toLowerCase();
+  const all = Object.values(ING).filter((i) => isActive(i) && !taken.has(i.id) && !/ข้าวสาร/.test(i.name));
+  const hit = q ? all.filter((i) => i.name.toLowerCase().includes(q)).sort((x, y) => x.name.toLowerCase().indexOf(q) - y.name.toLowerCase().indexOf(q) || x.name.localeCompare(y.name, 'th')) : all.sort((x, y) => Object.keys(ING_CATS).indexOf(x.cat) - Object.keys(ING_CATS).indexOf(y.cat) || x.name.localeCompare(y.name, 'th'));
+  return hit.slice(0, 60);
+}
+function hl(name, q) {
+  const i = q ? name.toLowerCase().indexOf(q.trim().toLowerCase()) : -1;
+  if (i < 0 || !q.trim()) return esc(name);
+  return esc(name.slice(0, i)) + '<mark>' + esc(name.slice(i, i + q.trim().length)) + '</mark>' + esc(name.slice(i + q.trim().length));
+}
+function comboDraw(reveal = false) {
+  const box = $(`.combo[data-combo="${combo.k}"]`); if (!box) return;
+  const pop = $('.combo-pop', box), inp = $('input', box);
+  combo.list = comboItems(combo.k, combo.q);
+  combo.hi = Math.min(combo.hi, Math.max(0, combo.list.length - 1));
+  let lastCat = null;
+  pop.innerHTML = combo.list.length ? combo.list.map((i, n) => {
+    const head = !combo.q.trim() && i.cat !== lastCat ? `<p class="combo-cat">${ING_CATS[i.cat]?.label || ''}</p>` : ''; lastCat = i.cat;
+    return `${head}<button type="button" class="combo-opt ${n === combo.hi ? 'hi' : ''}" role="option" data-combo-pick="${i.id}" data-n="${n}">${ingImg(i.id)}<span>${hl(i.name, combo.q)}</span><small>${ING_CATS[i.cat]?.label || ''}</small></button>`;
+  }).join('') : `<div class="combo-none"><p>ไม่เจอ “${esc(combo.q)}”</p><button type="button" class="btn ghost sm" data-act="goto-ings">${ic('plus')} เพิ่มวัตถุดิบใหม่</button></div>`;
+  pop.parentElement.hidden = false; box.classList.add('open'); inp.setAttribute('aria-expanded', 'true');
+  comboPlace(box, pop);
+  if (reveal) comboReveal(pop);
+  const hiEl = $('.combo-opt.hi', pop);
+  if (hiEl) { const pr = pop.getBoundingClientRect(), er = hiEl.getBoundingClientRect(), top = er.top - pr.top + pop.scrollTop - 34, bot = er.bottom - pr.top + pop.scrollTop + 6;
+    if (top < pop.scrollTop) pop.scrollTop = Math.max(0, top); else if (bot > pop.scrollTop + pop.clientHeight) pop.scrollTop = bot - pop.clientHeight; }
+}
+/* วางรายการให้พอดีจอ: ไม่ทับแถบเมนูล่าง ถ้าที่ข้างล่างไม่พอให้เปิดขึ้นข้างบน */
+const COMBO_H = 260; // ความสูงเดียวกันทุกช่อง
+function comboPlace(box, pop) {
+  const nav = $('.bottom-nav'), navH = nav && getComputedStyle(nav).display !== 'none' ? nav.offsetHeight : 0;
+  const head = $('.app-header')?.offsetHeight || 0, r = $('.combo-box', box).getBoundingClientRect();
+  const below = innerHeight - navH - r.bottom - 14, above = r.top - head - 14;
+  box.classList.remove('up');
+  pop.style.maxHeight = `${COMBO_H}px`;
+}
+/* มือถือ: เลื่อนหน้าให้เห็นรายการทั้งหมดเหนือแถบเมนู */
+function comboReveal(pop) {
+  const nav = $('.bottom-nav'), navH = nav && getComputedStyle(nav).display !== 'none' ? nav.offsetHeight : 0;
+  const over = pop.getBoundingClientRect().bottom - (innerHeight - navH - 12);
+  if (over > 0) window.scrollBy({ top: over, behavior: 'smooth' });
+}
+function comboClose() {
+  $$('.combo.open').forEach((b) => { b.classList.remove('open'); $('.combo-drop', b).hidden = true; $('input', b).setAttribute('aria-expanded', 'false'); });
+  combo.k = null;
+}
+function comboPick(id) {
+  const k = combo.k; if (!k || !ING[id]) return;
+  comboClose(); ACTIONS['pref-add']({ k, ids: id }); toast(`เพิ่ม ${ING[id].name} แล้ว`);
+  setTimeout(() => { const n = $(`input[data-combo-in="${k}"]`); n?.focus(); }, 30);
+}
+document.addEventListener('focusin', (e) => {
+  const k = e.target.dataset?.comboIn; if (!k) return;
+  combo.k = k; combo.q = e.target.value; combo.hi = 0; comboDraw(true);
+});
+document.addEventListener('input', (e) => { const k = e.target.dataset?.comboIn; if (k) { combo.k = k; combo.q = e.target.value; combo.hi = 0; comboDraw(); } });
+document.addEventListener('keydown', (e) => {
+  const k = e.target.dataset?.comboIn; if (!k || combo.k !== k) return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); combo.hi = Math.min(combo.list.length - 1, combo.hi + 1); comboDraw(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); combo.hi = Math.max(0, combo.hi - 1); comboDraw(); }
+  else if (e.key === 'Enter') { e.preventDefault(); const it = combo.list[combo.hi]; if (it) comboPick(it.id); }
+  else if (e.key === 'Escape') { e.stopPropagation(); comboClose(); e.target.blur(); }
+}, true);
+document.addEventListener('mousedown', (e) => {
+  const opt = e.target.closest('[data-combo-pick]'); if (opt) { e.preventDefault(); comboPick(opt.dataset.comboPick); return; }
+  if (!e.target.closest('.combo')) comboClose();
+});
+document.addEventListener('mouseover', (e) => { const o = e.target.closest('.combo-opt'); if (o && +o.dataset.n !== combo.hi) { $$('.combo-opt.hi').forEach((x) => x.classList.remove('hi')); o.classList.add('hi'); combo.hi = +o.dataset.n; } });
 
 /* ---------- boot ---------- */
 buildIng();
