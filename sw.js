@@ -1,6 +1,6 @@
 /* Calicat service worker — แคช app shell ให้เปิดได้แม้ออฟไลน์
    เวลาอัปเดตไฟล์: เปลี่ยน ?v=N ใน index.html แล้วเปลี่ยน VERSION ตรงนี้ให้ตรงกัน */
-const VERSION = 50;
+const VERSION = 51;
 const SHELL = `calicat-shell-v${VERSION}`;
 const FONTS = 'calicat-fonts';
 const IMAGES = 'calicat-images';
