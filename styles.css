@@ -1492,8 +1492,7 @@ img { display: block; }
 .combo-opt .ii-plus { flex: 0 0 26px; }
 @media (max-width: 760px) { body.combo-room .main { padding-bottom: 75vh; } }
 
-/* badge แคลอรี่ต้องอยู่เหนือรูปเสมอ (Safari บน iPhone วาดรอยเว้าของรูปเหลื่อมไป) */
-.rc-kcal { z-index: 2; box-shadow: 0 0 0 4px var(--bg); }
-.rc-photo { -webkit-mask: none; mask: none; }
-.rc-photo::before { content: ''; position: absolute; z-index: 1; right: -14px; bottom: -14px; width: 76px; height: 76px; border-radius: 50%; background: var(--bg); pointer-events: none; }
-@media (max-width: 760px) { .rc-photo::before { right: -13px; bottom: -13px; width: 60px; height: 60px; } }
+/* badge แคลอรี่อยู่เหนือรูปเสมอ + กันเส้นขีดบน iPhone:
+   รอยเว้าทำด้วย mask ที่ปกติจะ "ปูซ้ำ" ถ้าขนาดการ์ดมีเศษทศนิยม Safari จะโชว์ขอบของแผ่นถัดไปเป็นเส้นบาง ๆ */
+.rc-kcal { z-index: 2; }
+.rc-photo { -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-size: 100% 100%; mask-size: 100% 100%; }
