@@ -1823,7 +1823,7 @@ function comboItems() {
   const all = Object.values(ING).filter((i) => isActive(i) && !taken.has(i.id) && !/ข้าวสาร/.test(i.name));
   const order = (x, y) => Object.keys(ING_CATS).indexOf(x.cat) - Object.keys(ING_CATS).indexOf(y.cat) || x.name.localeCompare(y.name, 'th');
   const hit = q ? all.filter((i) => i.name.toLowerCase().includes(q)).sort((x, y) => x.name.toLowerCase().indexOf(q) - y.name.toLowerCase().indexOf(q) || x.name.localeCompare(y.name, 'th')) : all.sort(order);
-  const out = hit.slice(0, 80).map((i) => ({ id: i.id, name: i.name, cat: i.cat }));
+  const out = hit.map((i) => ({ id: i.id, name: i.name, cat: i.cat }));
   if (combo.mode === 'ing' && q && !all.some((i) => i.name.toLowerCase() === q)) out.push({ create: true, name: combo.q.trim() });
   return out;
 }
