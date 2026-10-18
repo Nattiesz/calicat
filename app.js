@@ -338,6 +338,7 @@ function openModal(html, { cls = '', onClick, refresh, onClose } = {}) {
 }
 function closeModal(m = modals[modals.length - 1]) {
   if (!m) return;
+  if (combo.el && m.sheet.contains(combo.el)) comboClose();
   const i = modals.indexOf(m); if (i < 0) return;
   modals.splice(i, 1);
   m.ov.classList.remove('show');
@@ -369,6 +370,7 @@ function renderHeader() {
 function renderMain(animate = true) {
   const main = $('#main');
   const y = window.scrollY;
+  if (combo.el && $('#main').contains(combo.el)) comboClose();
   main.innerHTML = PAGES[ui.tab]();
   if (animate) { main.classList.remove('enter'); void main.offsetWidth; main.classList.add('enter'); window.scrollTo(0, 0); }
   else window.scrollTo(0, y);
@@ -852,8 +854,7 @@ function prefBox(k, title, desc, quick) {
     <p class="muted small">${desc}</p>
     <div class="pb-chips">${sel.length ? sel.map((id) => `<button class="pchip" data-act="pref-del" data-k="${k}" data-id="${id}">${ingImg(id)}${esc(ING[id].name)}${ic('x')}</button>`).join('') : '<span class="muted small">ยังไม่ได้เลือก</span>'}</div>
     <div class="combo" data-combo="${k}">
-      <label class="combo-box">${ic('search')}<input data-combo-in="${k}" placeholder="ค้นหาวัตถุดิบ เช่น กุ้ง ผักชี" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list"><span class="combo-caret">${ic('right')}</span></label>
-      <div class="combo-drop" hidden><div class="combo-pop" role="listbox"></div></div>
+      <label class="combo-box">${ic('search')}<input data-combo-in="${k}" placeholder="พิมพ์เพื่อค้นหา เช่น กุ้ง ผักชี" autocomplete="off" enterkeyhint="search" role="combobox" aria-expanded="false" aria-autocomplete="list"><span class="combo-caret">${ic('right')}</span></label>
     </div>
     <div class="pb-quick">${quick.map(([l, ids]) => [l, ids.filter((x) => ING[x])]).filter(([, ids]) => ids.length).map(([l, ids]) => { const all = ids.every((x) => sel.includes(x)); return `<button class="qchip ${all ? 'on' : ''}" ${all ? 'disabled' : ''} data-act="pref-add" data-k="${k}" data-ids="${ids.join(',')}">${all ? ic('check') : ic('plus')}${l}</button>`; }).join('')}</div>
   </div>`;
@@ -1513,7 +1514,7 @@ function openEditor(rid, opts = {}) {
       const isNew = r.name.trim() && !r.id;
       return `<div class="ing-row ${isNew ? 'is-new' : ''}" data-i="${i}">
         <span class="ir-ic">${r.id ? ingImg(r.id) : ''}</span>
-        <input class="ir-name" list="ing-list" value="${esc(r.name)}" placeholder="วัตถุดิบ เช่น อกไก่" aria-label="ชื่อวัตถุดิบ">
+        <input class="ir-name" data-combo-in="ing" autocomplete="off" enterkeyhint="search" value="${esc(r.name)}" placeholder="วัตถุดิบ เช่น อกไก่" aria-label="ชื่อวัตถุดิบ">
         <input class="ir-q" type="number" step="any" min="0" value="${r.q}" placeholder="0" inputmode="decimal" aria-label="ปริมาณ">
         <select class="ir-u" aria-label="หน่วย">${units.map((u) => `<option ${u === r.u ? 'selected' : ''}>${u}</option>`).join('')}</select>
         <span class="ir-k">${fmt(rowKcal(r))}<small> kcal</small></span>
@@ -1809,78 +1810,108 @@ document.addEventListener('change', (e) => {
   }
 });
 
-/* ---------- ช่องค้นหาวัตถุดิบแบบ select2 (ใช้ในอาหารที่แพ้/ไม่ชอบ) ---------- */
-const combo = { k: null, list: [], hi: 0, q: '' };
-function comboItems(k, q) {
-  const taken = new Set([...(state.profile.allergies || []), ...(state.profile.dislikes || [])]);
-  q = q.trim().toLowerCase();
+/* ---------- ช่องค้นหาวัตถุดิบแบบ select2 ----------
+   ใช้ร่วมกัน: อาหารที่แพ้/ไม่ชอบ (data-combo-in="allergies|dislikes") และชื่อวัตถุดิบในหน้าสร้างเมนู (data-combo-in="ing")
+   รายการลอยแบบ fixed ใต้ช่อง และหลบแป้นพิมพ์มือถือด้วย visualViewport */
+const COMBO_H = 260;
+const combo = { el: null, mode: null, list: [], hi: 0, q: '' };
+const comboPop = (() => { const p = document.createElement('div'); p.className = 'combo-float'; p.setAttribute('role', 'listbox'); p.hidden = true; document.body.appendChild(p); return p; })();
+const isPhone = () => matchMedia('(max-width: 760px)').matches;
+function comboItems() {
+  const q = combo.q.trim().toLowerCase();
+  const taken = combo.mode === 'ing' ? new Set() : new Set([...(state.profile.allergies || []), ...(state.profile.dislikes || [])]);
   const all = Object.values(ING).filter((i) => isActive(i) && !taken.has(i.id) && !/ข้าวสาร/.test(i.name));
-  const hit = q ? all.filter((i) => i.name.toLowerCase().includes(q)).sort((x, y) => x.name.toLowerCase().indexOf(q) - y.name.toLowerCase().indexOf(q) || x.name.localeCompare(y.name, 'th')) : all.sort((x, y) => Object.keys(ING_CATS).indexOf(x.cat) - Object.keys(ING_CATS).indexOf(y.cat) || x.name.localeCompare(y.name, 'th'));
-  return hit.slice(0, 60);
+  const order = (x, y) => Object.keys(ING_CATS).indexOf(x.cat) - Object.keys(ING_CATS).indexOf(y.cat) || x.name.localeCompare(y.name, 'th');
+  const hit = q ? all.filter((i) => i.name.toLowerCase().includes(q)).sort((x, y) => x.name.toLowerCase().indexOf(q) - y.name.toLowerCase().indexOf(q) || x.name.localeCompare(y.name, 'th')) : all.sort(order);
+  const out = hit.slice(0, 80).map((i) => ({ id: i.id, name: i.name, cat: i.cat }));
+  if (combo.mode === 'ing' && q && !all.some((i) => i.name.toLowerCase() === q)) out.push({ create: true, name: combo.q.trim() });
+  return out;
 }
 function hl(name, q) {
-  const i = q ? name.toLowerCase().indexOf(q.trim().toLowerCase()) : -1;
-  if (i < 0 || !q.trim()) return esc(name);
-  return esc(name.slice(0, i)) + '<mark>' + esc(name.slice(i, i + q.trim().length)) + '</mark>' + esc(name.slice(i + q.trim().length));
+  q = q.trim(); const i = q ? name.toLowerCase().indexOf(q.toLowerCase()) : -1;
+  if (i < 0) return esc(name);
+  return esc(name.slice(0, i)) + '<mark>' + esc(name.slice(i, i + q.length)) + '</mark>' + esc(name.slice(i + q.length));
 }
-function comboDraw(reveal = false) {
-  const box = $(`.combo[data-combo="${combo.k}"]`); if (!box) return;
-  const pop = $('.combo-pop', box), inp = $('input', box);
-  combo.list = comboItems(combo.k, combo.q);
+function comboDraw() {
+  if (!combo.el || !document.body.contains(combo.el)) return comboClose();
+  combo.list = comboItems();
   combo.hi = Math.min(combo.hi, Math.max(0, combo.list.length - 1));
   let lastCat = null;
-  pop.innerHTML = combo.list.length ? combo.list.map((i, n) => {
-    const head = !combo.q.trim() && i.cat !== lastCat ? `<p class="combo-cat">${ING_CATS[i.cat]?.label || ''}</p>` : ''; lastCat = i.cat;
-    return `${head}<button type="button" class="combo-opt ${n === combo.hi ? 'hi' : ''}" role="option" data-combo-pick="${i.id}" data-n="${n}">${ingImg(i.id)}<span>${hl(i.name, combo.q)}</span><small>${ING_CATS[i.cat]?.label || ''}</small></button>`;
-  }).join('') : `<div class="combo-none"><p>ไม่เจอ “${esc(combo.q)}”</p><button type="button" class="btn ghost sm" data-act="goto-ings">${ic('plus')} เพิ่มวัตถุดิบใหม่</button></div>`;
-  pop.parentElement.hidden = false; box.classList.add('open'); inp.setAttribute('aria-expanded', 'true');
-  comboPlace(box, pop);
-  if (reveal) comboReveal(pop);
-  const hiEl = $('.combo-opt.hi', pop);
-  if (hiEl) { const pr = pop.getBoundingClientRect(), er = hiEl.getBoundingClientRect(), top = er.top - pr.top + pop.scrollTop - 34, bot = er.bottom - pr.top + pop.scrollTop + 6;
-    if (top < pop.scrollTop) pop.scrollTop = Math.max(0, top); else if (bot > pop.scrollTop + pop.clientHeight) pop.scrollTop = bot - pop.clientHeight; }
+  const head = `<div class="combo-hint">${combo.q.trim() ? `เจอ ${combo.list.filter((x) => !x.create).length} รายการ` : `พิมพ์เพื่อค้นหา · ${combo.list.length} รายการ`}</div>`;
+  comboPop.innerHTML = head + (combo.list.length ? combo.list.map((i, n) => {
+    if (i.create) return `<button type="button" class="combo-opt create ${n === combo.hi ? 'hi' : ''}" data-combo-pick="__new" data-n="${n}"><span class="ii-plus">${ic('plus')}</span><span>ใช้ชื่อ “${esc(i.name)}” <small>(วัตถุดิบใหม่)</small></span></button>`;
+    const h = !combo.q.trim() && i.cat !== lastCat ? `<p class="combo-cat">${ING_CATS[i.cat]?.label || ''}</p>` : ''; lastCat = i.cat;
+    return `${h}<button type="button" class="combo-opt ${n === combo.hi ? 'hi' : ''}" role="option" data-combo-pick="${i.id}" data-n="${n}">${ingImg(i.id)}<span>${hl(i.name, combo.q)}</span><small>${ING_CATS[i.cat]?.label || ''}</small></button>`;
+  }).join('') : `<div class="combo-none"><p>ไม่เจอ “${esc(combo.q)}”</p><button type="button" class="btn ghost sm" data-act="goto-ings">${ic('plus')} เพิ่มวัตถุดิบใหม่</button></div>`);
+  comboPop.dataset.mode = combo.mode;
+  comboPop.hidden = false;
+  combo.el.closest('.combo')?.classList.add('open');
+  combo.el.setAttribute('aria-expanded', 'true');
+  comboPlace();
+  const hiEl = $('.combo-opt.hi', comboPop);
+  if (hiEl) { const top = hiEl.offsetTop - 40, bot = hiEl.offsetTop + hiEl.offsetHeight + 6; if (top < comboPop.scrollTop) comboPop.scrollTop = Math.max(0, top); else if (bot > comboPop.scrollTop + comboPop.clientHeight) comboPop.scrollTop = bot - comboPop.clientHeight; }
 }
-/* วางรายการให้พอดีจอ: ไม่ทับแถบเมนูล่าง ถ้าที่ข้างล่างไม่พอให้เปิดขึ้นข้างบน */
-const COMBO_H = 260; // ความสูงเดียวกันทุกช่อง
-function comboPlace(box, pop) {
-  const nav = $('.bottom-nav'), navH = nav && getComputedStyle(nav).display !== 'none' ? nav.offsetHeight : 0;
-  const head = $('.app-header')?.offsetHeight || 0, r = $('.combo-box', box).getBoundingClientRect();
-  const below = innerHeight - navH - r.bottom - 14, above = r.top - head - 14;
-  box.classList.remove('up');
-  pop.style.maxHeight = `${COMBO_H}px`;
+function comboPlace() {
+  if (comboPop.hidden || !combo.el) return;
+  const vv = window.visualViewport, vh = vv ? vv.height : innerHeight, vTop = vv ? vv.offsetTop : 0;
+  const nav = $('.bottom-nav'), navH = nav && getComputedStyle(nav).display !== 'none' && vh > innerHeight * 0.8 ? nav.offsetHeight : 0;
+  const r = (combo.el.closest('.combo-box') || combo.el).getBoundingClientRect();
+  const below = vTop + vh - navH - r.bottom - 12;
+  comboPop.style.left = `${Math.round(r.left)}px`;
+  comboPop.style.width = `${Math.round(Math.max(r.width, 240))}px`;
+  comboPop.style.top = `${Math.round(r.bottom + 6)}px`;
+  comboPop.style.maxHeight = `${Math.max(120, Math.min(COMBO_H, below))}px`;
 }
-/* มือถือ: เลื่อนหน้าให้เห็นรายการทั้งหมดเหนือแถบเมนู */
-function comboReveal(pop) {
-  const nav = $('.bottom-nav'), navH = nav && getComputedStyle(nav).display !== 'none' ? nav.offsetHeight : 0;
-  const over = pop.getBoundingClientRect().bottom - (innerHeight - navH - 12);
-  if (over > 0) window.scrollBy({ top: over, behavior: 'smooth' });
+function comboOpen(el) {
+  combo.el = el; combo.mode = el.dataset.comboIn; combo.hi = 0;
+  combo.q = findIng(el.value) ? '' : el.value; // ช่องที่เลือกไว้แล้ว เปิดมาให้เห็นรายการทั้งหมด
+  if (isPhone()) {
+    // เลื่อนช่องขึ้นไปไว้ด้านบนจอ รายการจะได้ไม่โดนแป้นพิมพ์บัง
+    if (!el.closest('.sheet')) document.body.classList.add('combo-room'); // ให้เลื่อนช่องล่างสุดขึ้นไปด้านบนได้
+    setTimeout(() => { el.scrollIntoView({ block: 'start', behavior: 'smooth' }); setTimeout(comboDraw, 350); }, 60);
+  }
+  comboDraw();
 }
 function comboClose() {
-  $$('.combo.open').forEach((b) => { b.classList.remove('open'); $('.combo-drop', b).hidden = true; $('input', b).setAttribute('aria-expanded', 'false'); });
-  combo.k = null;
+  document.body.classList.remove('combo-room');
+  comboPop.hidden = true; comboPop.innerHTML = '';
+  $$('.combo.open').forEach((b) => b.classList.remove('open'));
+  combo.el?.setAttribute('aria-expanded', 'false');
+  combo.el = null; combo.mode = null;
 }
 function comboPick(id) {
-  const k = combo.k; if (!k || !ING[id]) return;
-  comboClose(); ACTIONS['pref-add']({ k, ids: id }); toast(`เพิ่ม ${ING[id].name} แล้ว`);
-  setTimeout(() => { const n = $(`input[data-combo-in="${k}"]`); n?.focus(); }, 30);
+  const el = combo.el, mode = combo.mode; if (!el) return;
+  if (mode === 'ing') {
+    el.value = id === '__new' ? combo.q.trim() : ING[id]?.name || '';
+    comboClose();
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return;
+  }
+  if (!ING[id]) return;
+  comboClose(); ACTIONS['pref-add']({ k: mode, ids: id }); toast(`เพิ่ม ${ING[id].name} แล้ว`);
 }
-document.addEventListener('focusin', (e) => {
-  const k = e.target.dataset?.comboIn; if (!k) return;
-  combo.k = k; combo.q = e.target.value; combo.hi = 0; comboDraw(true);
-});
-document.addEventListener('input', (e) => { const k = e.target.dataset?.comboIn; if (k) { combo.k = k; combo.q = e.target.value; combo.hi = 0; comboDraw(); } });
+document.addEventListener('focusin', (e) => { if (e.target.dataset?.comboIn) comboOpen(e.target); else if (combo.el && !comboPop.contains(e.target)) comboClose(); });
+document.addEventListener('input', (e) => { const t = e.target; if (!t.dataset?.comboIn) return; if (t !== combo.el) { combo.el = t; combo.mode = t.dataset.comboIn; } combo.q = t.value; combo.hi = 0; comboDraw(); });
+document.addEventListener('click', (e) => { const t = e.target.closest?.('[data-combo-in]'); if (t && t !== combo.el) comboOpen(t); });
 document.addEventListener('keydown', (e) => {
-  const k = e.target.dataset?.comboIn; if (!k || combo.k !== k) return;
+  if (e.target !== combo.el || comboPop.hidden) return;
   if (e.key === 'ArrowDown') { e.preventDefault(); combo.hi = Math.min(combo.list.length - 1, combo.hi + 1); comboDraw(); }
   else if (e.key === 'ArrowUp') { e.preventDefault(); combo.hi = Math.max(0, combo.hi - 1); comboDraw(); }
-  else if (e.key === 'Enter') { e.preventDefault(); const it = combo.list[combo.hi]; if (it) comboPick(it.id); }
-  else if (e.key === 'Escape') { e.stopPropagation(); comboClose(); e.target.blur(); }
+  else if (e.key === 'Enter') { e.preventDefault(); const it = combo.list[combo.hi]; if (it) comboPick(it.create ? '__new' : it.id); }
+  else if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); comboClose(); }
+  else if (e.key === 'Tab') comboClose();
 }, true);
 document.addEventListener('mousedown', (e) => {
   const opt = e.target.closest('[data-combo-pick]'); if (opt) { e.preventDefault(); comboPick(opt.dataset.comboPick); return; }
-  if (!e.target.closest('.combo')) comboClose();
+  if (comboPop.contains(e.target)) { e.preventDefault(); return; }
+  if (e.target !== combo.el && !e.target.closest('.combo')) comboClose();
 });
-document.addEventListener('mouseover', (e) => { const o = e.target.closest('.combo-opt'); if (o && +o.dataset.n !== combo.hi) { $$('.combo-opt.hi').forEach((x) => x.classList.remove('hi')); o.classList.add('hi'); combo.hi = +o.dataset.n; } });
+document.addEventListener('mouseover', (e) => { const o = e.target.closest('.combo-opt'); if (o && comboPop.contains(o) && +o.dataset.n !== combo.hi) { $$('.combo-opt.hi', comboPop).forEach((x) => x.classList.remove('hi')); o.classList.add('hi'); combo.hi = +o.dataset.n; } });
+addEventListener('scroll', () => comboPlace(), true);
+addEventListener('resize', () => comboPlace());
+window.visualViewport?.addEventListener('resize', () => comboPlace());
+window.visualViewport?.addEventListener('scroll', () => comboPlace());
 
 /* ---------- boot ---------- */
 buildIng();

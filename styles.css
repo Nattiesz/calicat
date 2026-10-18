@@ -1475,3 +1475,19 @@ img { display: block; }
 .reset-opt.on .ro-dot::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--green); }
 .reset-sheet .warn-box { margin-top: 0; }
 .empty-acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+
+/* dropdown ค้นหาแบบลอย (ใช้ร่วมกัน) */
+.combo-float { position: fixed; z-index: 300; overflow: auto; background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 22px 44px -20px rgba(79, 35, 23, .45); padding: 6px; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.combo-float[hidden] { display: none; }
+.combo-hint { font-size: 11.5px; color: var(--ink-3); padding: 4px 10px 6px; border-bottom: 1px dashed var(--line); margin-bottom: 4px; }
+.combo-float .combo-opt.create { color: var(--green); font-weight: 600; }
+.combo-float .combo-opt.create small { color: var(--ink-3); font-weight: 500; }
+.ii-plus { width: 26px; height: 26px; border-radius: 8px; background: rgba(105, 148, 7, .12); display: grid; place-items: center; flex: none; }
+.ii-plus .ic { width: 14px; height: 14px; }
+.combo-float[data-mode="allergies"] .combo-opt.hi { background: rgba(240, 125, 181, .09); }
+.combo-float[data-mode="dislikes"] .combo-opt.hi { background: var(--warn); }
+[data-combo-in] { scroll-margin-top: 84px; }
+.modal-sheet [data-combo-in], .sheet [data-combo-in] { scroll-margin-top: 16px; }
+@media (max-width: 760px) { .combo-opt { padding: 9px 10px; } }
+.combo-opt .ii-plus { flex: 0 0 26px; }
+@media (max-width: 760px) { body.combo-room .main { padding-bottom: 75vh; } }
