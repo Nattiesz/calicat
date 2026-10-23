@@ -92,6 +92,10 @@ const ICON = {
   upload: '<path d="M12 16V5M7 10l5-5 5 5M5 20h14"/>',
   image: '<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="M20 16l-4.5-4.5L7 20"/>',
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  heart: '<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.3a4.3 4.3 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20z"/>',
+  camera: '<path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.8l1.4-2h4.6l1.4 2h1.8A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.5"/>',
+  history: '<path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5"/><path d="M4 4v4.5h4.5M12 8v4l3 2"/>',
+  spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z"/>',
 };
 const ic = (n, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n]}</svg>`;
 
@@ -157,6 +161,8 @@ function defaultState() {
     shopChecked: {},
     fridge: ['egg', 'chicken_breast', 'tomato', 'garlic', 'holy_basil'],
     water: {},
+    waterLog: {}, // { 'YYYY-MM-DD': [[timestamp, ml], ...] } ประวัติการดื่มแต่ละครั้ง
+    favQuick: [], // เมนูโปรดที่กินนอกบ้าน/ซื้อมา: [{ n, k }]
   };
 }
 function seedDemo(s) {
@@ -183,7 +189,7 @@ function load() {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) {
       const s = JSON.parse(raw), d = defaultState();
-      return migrate({ ...d, ...s, water: s.water || {}, ingMeta: s.ingMeta || {}, settings: { ...d.settings, ...s.settings }, profile: { ...d.profile, ...s.profile } });
+      return migrate({ ...d, ...s, water: s.water || {}, waterLog: s.waterLog || {}, favQuick: s.favQuick || [], ingMeta: s.ingMeta || {}, settings: { ...d.settings, ...s.settings }, profile: { ...d.profile, ...s.profile } });
     }
   } catch (e) { /* ignore */ }
   const s = defaultState();
@@ -399,16 +405,19 @@ function heroHTML() {
         <span class="hm-slot">${SLOTS[slot].short}</span>${r.quick && !r.img ? `<span class="ph xs q-ph">${ic('cart')}</span>` : photo(r, 80, 'xs')}<span class="hm-nm">${esc(r.name)}${eaten ? ` ${ic('check')}` : ''}</span><span class="hm-k">${fmt(perServing(r) * num(s, 1))}</span></li>`).join('')}
         ${items.length > 5 ? `<li class="more">และอีก ${items.length - 5} เมนู</li>` : ''}</ul>` : ''}
       <div class="hero-actions">
-        <button class="btn primary" data-act="open-day" data-date="${k}">${ic('edit')} แพลนวันนี้</button>
-        <button class="btn ghost" data-act="quick-log" data-date="${k}" data-slot="${['breakfast', 'lunch', 'snack', 'dinner', 'dinner'][Math.min(4, Math.floor(Math.max(0, t.getHours() - 6) / 4))]}">${ic('cart')} บันทึกกินนอกบ้าน</button>
+        <button class="btn primary" data-act="ai-photo" data-date="${k}" data-slot="${nowSlot()}">${ic('camera')} ถ่ายรูปนับแคลอรี่</button>
+        <button class="btn soft" data-act="random-fav" data-date="${k}" data-slot="${nowSlot()}">${ic('dice')} สุ่มเมนูโปรด</button>
+        <button class="btn ghost" data-act="quick-log" data-date="${k}" data-slot="${nowSlot()}">${ic('cart')} กินนอกบ้าน</button>
+        <button class="btn ghost" data-act="open-day" data-date="${k}">${ic('edit')} แพลนวันนี้</button>
       </div>
     </div>
     <div class="hero-visual water grain">
       <span class="cloud c1"></span><span class="cloud c2"></span><span class="cloud c3"></span>
+      <button class="w-hist" data-act="water-history">${ic('history')} ประวัติ</button>
       <div class="w-top"><p class="eyebrow">ดื่มน้ำวันนี้</p><p class="w-num"><b id="w-ml">${fmt(ml)}</b><small> / ${fmt(wg)} ml</small></p><p class="w-note" id="w-note">${waterNote(ml, wg)}</p>
         <div class="w-cups" id="w-cups">${cupsHTML(ml, wg)}</div></div>
       <div class="w-stage" id="w-stage">${bottleSVG(ml / wg)}</div>
-      <div class="w-actions">${[150, 250, 500].map((v) => `<button data-act="water" data-v="${v}">+${v}<small>ml</small></button>`).join('')}<button class="undo" data-act="water" data-v="-250" aria-label="ลบ 250 ml">${ic('minus')}</button></div>
+      <div class="w-actions">${[150, 250, 500].map((v) => `<button data-act="water" data-v="${v}">+${v}<small>ml</small></button>`).join('')}<button class="undo" data-act="water-undo" aria-label="ลบแก้วล่าสุด" title="ลบแก้วล่าสุด">${ic('minus')}</button></div>
     </div>
   </section>`;
 }
@@ -464,6 +473,55 @@ function updateWater() {
   $('#w-ml').textContent = fmt(ml); $('#w-note').textContent = waterNote(ml, wg); $('#w-cups').innerHTML = cupsHTML(ml, wg);
   const st = $('#w-stage'); st.classList.remove('slosh'); void st.offsetWidth; st.classList.add('slosh');
 }
+function addWater(k, v) {
+  state.water[k] = Math.max(0, (state.water[k] || 0) + v);
+  if (v > 0) (state.waterLog[k] ||= []).push([Date.now(), v]);
+  if (!state.water[k]) { delete state.water[k]; delete state.waterLog[k]; }
+}
+const hhmm = (t) => { const d = new Date(t); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+/* ประวัติดื่มน้ำ: กราฟย้อนหลัง 7/30 วัน + แก้ไขย้อนหลังได้ (ลืมกดก็เติมทีหลังได้) */
+function openWaterHistory() {
+  const ctx = { n: 7, open: todayKey() };
+  const m = openModal('', {
+    cls: 'water-sheet', refresh: () => draw(),
+    onClick: (e) => {
+      const b = e.target.closest('[data-m]'); if (!b) return;
+      const a = b.dataset.m;
+      if (a === 'n') ctx.n = +b.dataset.v;
+      if (a === 'day') ctx.open = ctx.open === b.dataset.k ? '' : b.dataset.k;
+      if (a === 'add') { addWater(b.dataset.k, +b.dataset.v); save(); if (b.dataset.k === todayKey()) renderMain(false); }
+      if (a === 'del') {
+        const k = b.dataset.k, log = state.waterLog[k] || [], [it] = log.splice(+b.dataset.i, 1);
+        if (it) { state.water[k] = Math.max(0, (state.water[k] || 0) - it[1]); if (!state.water[k]) { delete state.water[k]; delete state.waterLog[k]; } save(); if (k === todayKey()) renderMain(false); }
+      }
+      draw();
+    },
+  });
+  function draw() {
+    const wg = state.settings.waterGoal || 2000, tk = todayKey();
+    const keys = Array.from({ length: ctx.n }, (_, i) => keyOf(addDays(new Date(), i - ctx.n + 1)));
+    const vals = keys.map((k) => state.water[k] || 0), max = Math.max(wg * 1.25, ...vals);
+    const logged = vals.filter((v) => v > 0), avg = logged.length ? logged.reduce((a, b) => a + b, 0) / logged.length : 0;
+    // นับวันติดกันที่ครบเป้า (วันนี้ยังไม่ครบก็ยังไม่ตัดสตรีค เริ่มนับจากเมื่อวาน)
+    let streak = 0, d = (state.water[tk] || 0) >= wg ? new Date() : addDays(new Date(), -1);
+    while ((state.water[keyOf(d)] || 0) >= wg) { streak++; d = addDays(d, -1); }
+    const list = [...keys].reverse();
+    m.sheet.innerHTML = `<div class="modal-head"><div><p class="eyebrow">ดื่มน้ำ</p><h3>ประวัติย้อนหลัง</h3></div>${closeBtn}</div>
+      <div class="seg">${[[7, '7 วัน'], [30, '30 วัน']].map(([v, l]) => `<button class="${ctx.n === v ? 'on' : ''}" data-m="n" data-v="${v}">${l}</button>`).join('')}</div>
+      <div class="wh-stats">
+        <div><b>${fmt(avg)}</b><span>ml เฉลี่ย/วัน</span></div>
+        <div><b>${vals.filter((v) => v >= wg).length}<small>/${ctx.n}</small></b><span>วันที่ครบเป้า</span></div>
+        <div><b>${streak}</b><span>วันติดกัน</span></div>
+      </div>
+      <div class="wh-bars ${ctx.n > 7 ? 'dense' : ''}"><span class="goal-line" style="bottom:calc(34px + ${(wg / max).toFixed(3)} * (100% - 34px))"></span>
+        ${keys.map((k, i) => { const d = parseKey(k); return `<button class="wh-col ${k === ctx.open ? 'sel' : ''}" data-m="day" data-k="${k}" aria-label="${dayLabel(k)} ${fmt(vals[i])} ml"><span class="wh-bar ${vals[i] >= wg ? 'full' : ''}" style="height:${Math.max((vals[i] / max) * 100, vals[i] ? 3 : 0)}%"></span><small>${ctx.n > 7 ? (i % 5 === 4 || k === tk ? d.getDate() : '') : `${TH_DOW_S[d.getDay()]}<br>${d.getDate()}`}</small></button>`; }).join('')}</div>
+      <ul class="wh-list">${list.map((k) => { const v = state.water[k] || 0, log = state.waterLog[k] || [], open = ctx.open === k;
+        return `<li class="${open ? 'open' : ''}"><button class="wh-row" data-m="day" data-k="${k}"><span class="wh-d">${k === tk ? 'วันนี้' : dayLabel(k)}</span><span class="wh-meter"><i style="width:${Math.min(v / wg, 1) * 100}%" class="${v >= wg ? 'full' : ''}"></i></span><b>${fmt(v)}</b><small>ml</small>${v >= wg ? `<span class="wh-ok">${ic('check')}</span>` : ''}</button>
+          ${open ? `<div class="wh-detail">${log.length ? `<div class="wh-log">${log.map(([t, ml], i) => `<span class="wh-chip">${hhmm(t)} · ${ml} ml<button data-m="del" data-k="${k}" data-i="${i}" aria-label="ลบ">${ic('x')}</button></span>`).join('')}</div>` : v ? `<p class="muted small">บันทึกไว้ ${fmt(v)} ml (ไม่มีเวลาแยกแต่ละแก้ว)</p>` : '<p class="muted small">ยังไม่มีบันทึก ลืมกดไว้ เติมย้อนหลังได้เลย</p>'}
+            <div class="wh-add">${[150, 250, 500].map((x) => `<button class="qchip" data-m="add" data-k="${k}" data-v="${x}">${ic('plus')}${x} ml</button>`).join('')}</div></div>` : ''}</li>`; }).join('')}</ul>`;
+  }
+  draw();
+}
 function rangeTitle() {
   const c = ui.cursor;
   if (ui.view === 'week') {
@@ -487,6 +545,7 @@ function pagePlan() {
     </div>
     <div class="plan-tools">
       <button class="btn soft sm" data-act="fill-random">${ic('dice')} สุ่มเติมช่องว่าง</button>
+      <button class="btn sm fav-fill" data-act="fill-random" data-fav="1">${ic('heart')} สุ่มจากเมนูโปรด</button>
       ${ui.view === 'week' ? `<button class="btn ghost sm" data-act="copy-prev">${ic('copy')} ใช้แพลนสัปดาห์ก่อน</button>` : ''}
       <button class="btn ghost sm danger-text" data-act="clear-range">${ic('trash')} ล้าง</button>
     </div>
@@ -550,7 +609,7 @@ function slotBlock(k, s, day) {
     ${items.map((it, i) => { const r = itemRec(it); if (!r) return ''; return `<div class="item ${it.eaten ? 'eaten' : ''} ${r.quick ? 'quick' : ''} ${lastAdded === `${k}|${s}|${i}` ? 'pop' : ''}" role="button" tabindex="0" data-act="item" data-date="${k}" data-slot="${s}" data-i="${i}">
       ${r.quick && !r.img ? `<span class="ph sm q-ph">${ic('cart')}</span>` : photo(r, 90, 'sm')}<span class="nm">${esc(r.name)}${num(it.s, 1) !== 1 ? ` <em>×${fmtQ(it.s)}</em>` : ''}${r.quick ? `<span class="src-tag">${SOURCES[r.src] || 'ซื้อมา'}</span>` : flagBadge(r, 'sm')}</span><span class="k">${fmt(itemKcal(it))}</span>
       <button class="eat-btn" data-act="eat" data-date="${k}" data-slot="${s}" data-i="${i}" aria-label="${it.eaten ? 'ยกเลิกกินแล้ว' : 'กินแล้ว'}" title="${it.eaten ? 'กินแล้ว' : 'กดเมื่อกินแล้ว'}">${ic('check')}</button></div>`; }).join('')}
-    <div class="slot-adds"><button class="add-item" data-act="pick" data-date="${k}" data-slot="${s}">${ic('plus')} เพิ่มเมนู</button><button class="add-item log" data-act="quick-log" data-date="${k}" data-slot="${s}">${ic('cart')} กินนอก/ซื้อมา</button></div>
+    <div class="slot-adds"><button class="add-item" data-act="pick" data-date="${k}" data-slot="${s}">${ic('plus')} เพิ่มเมนู</button><button class="add-item log" data-act="quick-log" data-date="${k}" data-slot="${s}">${ic('cart')} กินนอก/ซื้อมา</button><button class="add-item log" data-act="ai-photo" data-date="${k}" data-slot="${s}" aria-label="ถ่ายรูปให้ AI นับแคลอรี่">${ic('camera')} ถ่ายรูป</button></div>
   </div>`;
 }
 function dowHeader() {
@@ -605,7 +664,7 @@ function recipeMatches(r, q) {
   return r.name.toLowerCase().includes(q) || r.ing.some((x) => ING[x.id]?.name.toLowerCase().includes(q));
 }
 function pageMenus() {
-  const types = [['all', 'ทั้งหมด'], ...Object.entries(TYPES)];
+  const types = [['all', 'ทั้งหมด'], ['fav', `${ic('heart')} เมนูโปรด <small>${state.recipes.filter((r) => r.fav).length}</small>`], ...Object.entries(TYPES)];
   const tabs = `<div class="seg page-tabs">${[['recipes', `เมนู <small>${state.recipes.length}</small>`], ['ings', `วัตถุดิบ <small>${Object.keys(ING).length}</small>`]].map(([v, l]) => `<button class="${ui.menuView === v ? 'on' : ''}" data-act="menu-view" data-v="${v}">${l}</button>`).join('')}</div>`;
   if (ui.menuView === 'ings') return `
   <div class="page-head">
@@ -617,7 +676,7 @@ function pageMenus() {
   return `
   <div class="page-head">
     <div><p class="eyebrow">สมุดเมนู</p><h1>เมนู<em>ของฉัน</em>${peek()}</h1></div>
-    <button class="btn primary" data-act="new-recipe">${ic('plus')} สร้างเมนูใหม่</button>
+    <div class="head-actions"><button class="btn ghost" data-act="random-fav">${ic('dice')} สุ่มเมนูโปรด</button><button class="btn primary" data-act="new-recipe">${ic('plus')} สร้างเมนูใหม่</button></div>
   </div>
   ${tabs}
   <div class="toolbar">
@@ -627,22 +686,27 @@ function pageMenus() {
   <section class="menu-grid" id="menu-grid">${menuGrid()}</section>`;
 }
 function menuGrid() {
-  const list = state.recipes.filter((r) => (ui.menuType === 'all' || r.type === ui.menuType) && recipeMatches(r, ui.menuQ));
+  const list = state.recipes.filter((r) => (ui.menuType === 'all' || (ui.menuType === 'fav' ? r.fav : r.type === ui.menuType)) && recipeMatches(r, ui.menuQ))
+    .sort((a, b) => (ui.menuType === 'all' ? (b.fav ? 1 : 0) - (a.fav ? 1 : 0) : 0));
+  if (ui.menuType === 'fav' && !list.length && !ui.menuQ) return emptyState(`ยังไม่มีเมนูโปรดเลย<br><small>แตะรูปหัวใจ ${ic('heart')} บนการ์ดเมนูที่ชอบ แล้วจะมาอยู่ตรงนี้</small>`, `<button class="btn ghost" data-act="menu-type" data-v="all">ดูเมนูทั้งหมด</button>`);
   if (!state.recipes.length) return emptyState('สมุดเมนูยังว่างอยู่<br>เริ่มสร้างเมนูแรกของคุณได้เลย', `<div class="empty-acts"><button class="btn primary" data-act="new-recipe">${ic('plus')} สร้างเมนูแรก</button><button class="btn ghost" data-act="restore-samples" data-what="recipes">ใช้เมนูตัวอย่าง ${SEED_RECIPES.length} เมนู</button></div>`);
   if (!list.length) return emptyState('ไม่เจอเมนูนี้เลย', `<button class="btn primary" data-act="new-recipe" data-name="${esc(ui.menuQ)}">${ic('plus')} สร้างเมนู “${esc(ui.menuQ || 'ใหม่')}”</button>`);
   return list.map((r) => recipeCard(r)).join('');
 }
 function recipeCard(r) {
   const s = recipeSrc(r, 460);
-  return `<button class="rcard" data-act="recipe" data-rid="${r.id}">${peek()}
+  return `<article class="rcard" role="button" tabindex="0" data-act="recipe" data-rid="${r.id}">${peek()}
+    ${favBtn(r)}
     <div class="rc-photo ${s ? '' : 'no-photo'}">
       ${s ? `<img src="${esc(s)}" alt="" loading="lazy" decoding="async">` : `<img class="ph-3d" src="${fl('Shallow pan of food')}" alt="">`}
       <span class="rc-type">${TYPES[r.type] || ''}</span>${flagBadge(r, 'on-photo')}
       <div class="rc-title"><h3>${esc(r.name)}</h3><p>${r.ing.length} วัตถุดิบ${num(r.servings, 1) > 1 ? ` · ${r.servings} ที่` : ''}</p></div>
     </div>
     <span class="rc-kcal"><b>${fmt(perServing(r))}</b><small>kcal</small></span>
-  </button>`;
+  </article>`;
 }
+const favBtn = (r, cls = '') => `<button class="fav-btn ${r.fav ? 'on' : ''} ${cls}" data-act="fav" data-rid="${r.id}" aria-pressed="${!!r.fav}" aria-label="${r.fav ? 'เอาออกจากเมนูโปรด' : 'เพิ่มเป็นเมนูโปรด'}" title="${r.fav ? 'เมนูโปรด' : 'กดเพื่อเพิ่มเป็นเมนูโปรด'}">${ic('heart')}</button>`;
+const favCount = () => state.recipes.filter((r) => r.fav).length + (state.favQuick || []).length;
 function emptyState(text, action = '') {
   return `<div class="empty"><div class="empty-card">${catSVG()}<p>${text}</p>${action}</div></div>`;
 }
@@ -881,7 +945,8 @@ function pageMe() {
       </div>
       <div class="pc-data">
         <button class="data-row" data-act="export"><span class="dr-ic">${ic('download')}</span><span><b>สำรองข้อมูล</b><small>ดาวน์โหลดไฟล์ .json</small></span></button>
-        <label class="data-row"><span class="dr-ic">${ic('upload')}</span><span><b>นำเข้าข้อมูล</b><small>กู้คืนจากไฟล์สำรอง</small></span><input type="file" id="import-file" accept="application/json,.json" hidden></label>
+        <label class="data-row"><span class="dr-ic">${ic('upload')}</span><span><b>นำเข้าข้อมูล</b><small>รวมเมนู/แพลนจากไฟล์สำรอง</small></span><input type="file" id="import-file" accept="application/json,.json" hidden></label>
+        ${(() => { try { return localStorage.getItem(UNDO_KEY); } catch { return null; } })() ? `<button class="data-row" data-act="undo-import"><span class="dr-ic">${ic('history')}</span><span><b>ย้อนการนำเข้า</b><small>กลับไปเป็นข้อมูลก่อนนำเข้าครั้งล่าสุด</small></span></button>` : ''}
         <button class="data-row danger" data-act="reset-all"><span class="dr-ic">${ic('trash')}</span><span><b>เริ่มใหม่ทั้งหมด</b><small>ลบแพลน เมนู และการตั้งค่า</small></span></button>
       </div>
     </aside>
@@ -907,6 +972,13 @@ function pageMe() {
           <div><h3 class="sub-title">สัปดาห์เริ่มวัน</h3>
             <div class="seg">${[[1, 'จันทร์'], [0, 'อาทิตย์']].map(([v, l]) => `<button class="${s.weekStart === v ? 'on' : ''}" data-act="set-ws" data-v="${v}">${l}</button>`).join('')}</div></div>
         </div>
+      </section>
+
+      <section class="card pad ai-card">
+        <h2 class="card-title">${ic('spark')} AI นับแคลอรี่จากรูป</h2>
+        <p class="muted small">ถ่ายรูปอาหาร แล้ว AI จะบอกว่ามีอะไรบ้างและประมาณกี่ kcal ใช้คีย์ Gemini ของ Google ได้ฟรี หรือใส่คีย์ Claude แทนก็ได้</p>
+        <div class="ai-status ${aiKey() ? 'on' : ''}"><span class="dot"></span><b>${aiKey() ? `${AI_NAME[aiProvider()] || 'AI'} · คีย์ …${esc(aiKey().slice(-4))}` : 'ยังไม่ได้ใส่ API key'}</b><span class="grow"></span>
+          ${aiKey() ? `<button class="btn ghost sm danger-text" data-act="ai-key-del">ลบคีย์</button><button class="btn ghost sm" data-act="ai-key-set">เปลี่ยนคีย์</button><button class="btn soft sm" data-act="ai-photo">${ic('camera')} ลองถ่ายรูป</button>` : `<button class="btn primary sm" data-act="ai-key-set">ใส่ API key</button>`}</div>
       </section>
 
       <section class="card pad calc-card">
@@ -1010,10 +1082,11 @@ function openDayModal(k) {
 
 function openPicker(k, slot) {
   const ctx = { q: '', f: 'suggest', added: [] };
-  const filters = [['suggest', `เหมาะกับมื้อ${SLOTS[slot].short}`], ['all', 'ทั้งหมด'], ...Object.entries(TYPES)];
+  const filters = [['suggest', `เหมาะกับมื้อ${SLOTS[slot].short}`], ['fav', `${ic('heart')} โปรด`], ['all', 'ทั้งหมด'], ...Object.entries(TYPES)];
   const m = openModal(`
     <div class="modal-head"><div><p class="eyebrow">${SLOTS[slot].label} · ${dayLabel(k)}</p><h3>เลือกเมนู</h3></div>${closeBtn}</div>
-    <label class="search">${ic('search')}<input id="pk-q" type="search" placeholder="พิมพ์ชื่อเมนู เช่น กะเพรา สลัด" autocomplete="off"></label>
+    <div class="pk-top"><label class="search">${ic('search')}<input id="pk-q" type="search" placeholder="พิมพ์ชื่อเมนู เช่น กะเพรา สลัด" autocomplete="off"></label>
+      <button class="btn soft sm" data-m="rand">${ic('dice')} สุ่มเมนูโปรด</button></div>
     <div class="chips scroll" id="pk-f"></div>
     <div class="pk-added" id="pk-added"></div>
     <div class="pick-list" id="pk-list"></div>
@@ -1024,6 +1097,7 @@ function openPicker(k, slot) {
       if (b.dataset.m === 'f') { ctx.f = b.dataset.v; draw(); }
       if (b.dataset.m === 'add') { const r = rec(b.dataset.rid); allergyOk(r).then((ok) => { if (!ok) return; addToPlan(k, slot, r.id, 1); ctx.added.push(r.id); draw(); toast(`เพิ่ม ${r.name} แล้ว`); }); }
       if (b.dataset.m === 'create') openEditor(null, { name: ctx.q.trim(), slot, onSave: (r) => { addToPlan(k, slot, r.id, 1); ctx.added.push(r.id); draw(); } });
+      if (b.dataset.m === 'rand') openRandomFav(k, slot, { onAdd: (rid) => { if (rid) ctx.added.push(rid); draw(); } });
     },
   });
   const q = $('#pk-q', m.sheet);
@@ -1033,16 +1107,67 @@ function openPicker(k, slot) {
     $('#pk-added', m.sheet).innerHTML = ctx.added.length ? `<span class="muted">เพิ่มแล้ว</span> ${ctx.added.map((id) => `<span class="ing-tag have">${photo(rec(id), 40, 'xxs')}${esc(rec(id)?.name)}</span>`).join('')}` : '';
     const qq = ctx.q.trim();
     let list = state.recipes.filter((r) => recipeMatches(r, qq));
-    if (!qq) list = list.filter((r) => ctx.f === 'all' || (ctx.f === 'suggest' ? (r.slots || []).includes(slot) && !isAvoided(r) : r.type === ctx.f));
+    if (!qq) list = list.filter((r) => ctx.f === 'all' || (ctx.f === 'fav' ? r.fav : ctx.f === 'suggest' ? (r.slots || []).includes(slot) && !isAvoided(r) : r.type === ctx.f));
+    list.sort((a, b) => (b.fav ? 1 : 0) - (a.fav ? 1 : 0));
     const exact = list.some((r) => r.name.toLowerCase() === qq.toLowerCase());
     $('#pk-list', m.sheet).innerHTML =
       (qq && !exact ? `<button class="pick-row create" data-m="create"><span class="ph md plus-ph">${ic('plus')}</span><span class="nm">สร้างเมนูใหม่ “${esc(qq)}”<small>ใส่วัตถุดิบ แล้วระบบคำนวณแคลอรี่ให้</small></span></button>` : '') +
       (list.length ? list.map((r) => `<button class="pick-row" data-m="add" data-rid="${r.id}">${photo(r, 120, 'md')}
-        <span class="nm"><span>${esc(r.name)} ${flagBadge(r, 'sm')}</span><small>${TYPES[r.type] || ''} · ${r.ing.length} วัตถุดิบ</small></span><span class="k">${fmt(perServing(r))}<small>kcal</small></span><span class="plus">${ic('plus')}</span></button>`).join('')
-        : `<p class="muted center pad">ไม่เจอเมนูที่ตรงกัน</p>`);
+        <span class="nm"><span>${r.fav ? `<i class="fav-mark">${ic('heart')}</i>` : ''}${esc(r.name)} ${flagBadge(r, 'sm')}</span><small>${TYPES[r.type] || ''} · ${r.ing.length} วัตถุดิบ</small></span><span class="k">${fmt(perServing(r))}<small>kcal</small></span><span class="plus">${ic('plus')}</span></button>`).join('')
+        : `<p class="muted center pad">${ctx.f === 'fav' && !qq ? 'ยังไม่มีเมนูโปรด — แตะหัวใจที่เมนูในหน้า “เมนู” เพื่อเพิ่ม' : 'ไม่เจอเมนูที่ตรงกัน'}</p>`);
   }
   draw();
   if (matchMedia('(pointer:fine)').matches) setTimeout(() => q.focus(), 60);
+}
+
+/* สุ่มจากเมนูโปรด (เมนูในสมุด + อาหารนอกบ้านที่กดหัวใจไว้) แล้วใส่มื้อได้ในแตะเดียว */
+function nowSlot() { return ['breakfast', 'lunch', 'snack', 'dinner', 'dinner'][Math.min(4, Math.floor(Math.max(0, new Date().getHours() - 6) / 4))]; }
+function favPool(all = false) {
+  const recs = state.recipes.filter((r) => (all || r.fav) && r.type !== 'base' && !isAvoided(r)).map((r) => ({ rid: r.id }));
+  return all ? recs : [...recs, ...(state.favQuick || []).map((f) => ({ qn: f.n, qk: f.k }))];
+}
+function openRandomFav(k = todayKey(), slot = nowSlot(), { onAdd } = {}) {
+  const ctx = { k, slot, all: !favCount(), cur: null, spin: 0 };
+  const roll = () => {
+    const pool = favPool(ctx.all), prev = JSON.stringify(ctx.cur);
+    const p2 = pool.length > 1 ? pool.filter((x) => JSON.stringify(x) !== prev) : pool;
+    ctx.cur = p2[Math.floor(Math.random() * p2.length)] || null; ctx.spin++;
+  };
+  const m = openModal('', {
+    cls: 'small rand-sheet',
+    onClick: (e) => {
+      const b = e.target.closest('[data-m]'); if (!b) return;
+      const a = b.dataset.m;
+      if (a === 'again') roll();
+      if (a === 'slot') ctx.slot = b.dataset.v;
+      if (a === 'all') { ctx.all = !ctx.all; roll(); }
+      if (a === 'go' && ctx.cur) {
+        const it = ctx.cur.rid ? { rid: ctx.cur.rid, s: 1 } : { qn: ctx.cur.qn, qk: ctx.cur.qk, src: 'buy', s: 1 };
+        const r = itemRec(it);
+        allergyOk(r).then((ok) => {
+          if (!ok) return;
+          const d = getDay(ctx.k, true); if (!d.slots.includes(ctx.slot)) d.slots.push(ctx.slot);
+          (d.m[ctx.slot] ||= []).push(it); save(); refreshAll(); closeModal(m);
+          toast(`ใส่ ${r.name} ใน${SLOTS[ctx.slot].label}แล้ว`); onAdd?.(it.rid);
+        });
+        return;
+      }
+      draw();
+    },
+  });
+  function draw() {
+    const r = ctx.cur && itemRec({ ...ctx.cur, s: 1 }), n = favPool(ctx.all).length;
+    m.sheet.innerHTML = `<div class="modal-head"><div><p class="eyebrow">${ctx.all ? 'สุ่มจากทุกเมนู' : `สุ่มจากเมนูโปรด ${n} เมนู`}</p><h3>กินอันนี้ไหม?</h3></div>${closeBtn}</div>
+      ${r ? `<div class="rand-card" style="--spin:${ctx.spin}">${r.quick && !r.img ? `<span class="ph xl q-ph">${ic('cart')}</span>` : photo(r, 360, 'xl')}
+        <div class="rand-txt"><h3>${esc(r.name)}</h3><p><b>${fmt(perServing(r))}</b> kcal${r.quick ? ' · กินนอกบ้าน' : ` · ${TYPES[r.type] || ''}`}</p></div>
+        <button class="btn soft" data-m="again">${ic('dice')} สุ่มใหม่</button></div>`
+      : `<div class="rand-empty">${catSVG()}<p>${ctx.all ? 'ยังไม่มีเมนูให้สุ่มเลย สร้างเมนูก่อนนะ' : 'ยังไม่มีเมนูโปรด'}<br><small>แตะหัวใจ ${ic('heart')} ที่การ์ดเมนู หรือตอนบันทึกกินนอกบ้าน เพื่อเพิ่มเป็นเมนูโปรด</small></p></div>`}
+      ${favCount() ? `<label class="switch rand-all"><input type="checkbox" data-m="all" ${ctx.all ? 'checked' : ''}><span></span> สุ่มจากทุกเมนูแทน</label>` : ''}
+      ${r ? `<div class="field"><span class="lbl">ใส่ในมื้อ · ${ctx.k === todayKey() ? 'วันนี้' : dayLabel(ctx.k)}</span><div class="chips wrap">${SLOT_ORDER.map((s) => `<button class="chip ${ctx.slot === s ? 'on' : ''}" data-m="slot" data-v="${s}">${SLOTS[s].short}</button>`).join('')}</div></div>
+      <div class="modal-foot"><span class="grow"></span><button class="btn ghost" data-act="close">ไว้ก่อน</button><button class="btn primary" data-m="go">${ic('check')} ใส่${SLOTS[ctx.slot].label}</button></div>`
+      : `<div class="modal-foot"><span class="grow"></span><button class="btn primary" data-act="tab" data-tab="menus">ไปหน้าเมนู</button></div>`}`;
+  }
+  roll(); draw();
 }
 
 function openItemModal(k, slot, idx) {
@@ -1099,7 +1224,7 @@ function openRecipe(rid) {
     const r = rec(rid); if (!r) { closeModal(m); return; }
     const total = recipeTotal(r), sv = Math.max(1, num(r.servings, 1)), s = recipeSrc(r, 720);
     m.sheet.innerHTML = `
-      <div class="recipe-hero ${s ? '' : 'no-photo'}">${s ? `<img src="${esc(s)}" alt="">` : `<img class="ph-3d" src="${fl('Shallow pan of food')}" alt="">`}${closeBtn}
+      <div class="recipe-hero ${s ? '' : 'no-photo'}">${s ? `<img src="${esc(s)}" alt="">` : `<img class="ph-3d" src="${fl('Shallow pan of food')}" alt="">`}${closeBtn}${favBtn(r, 'on-hero')}
         <div class="rh-text"><p>${TYPES[r.type] || ''} · ${(r.slots || []).map((x) => SLOTS[x].short).join(' / ')}</p><h3>${esc(r.name)}</h3></div></div>
       <div class="recipe-body">
         <div class="recipe-stats">
@@ -1264,11 +1389,12 @@ function setIngActive(id, on) {
 
 /* บันทึกกินนอกบ้าน / ซื้อมา */
 const QUICK_PRESETS = [['ข้าวมันไก่', 600], ['ข้าวขาหมู', 690], ['ก๋วยเตี๋ยวน้ำ', 350], ['ข้าวผัดกะเพรา + ไข่ดาว', 630], ['ส้มตำไทย', 120], ['ผัดไทย', 550], ['ข้าวไข่เจียว', 450], ['โจ๊ก', 250], ['แซนด์วิช', 350], ['สลัดไก่', 300], ['ชานมไข่มุก', 350], ['กาแฟเย็น', 230]];
-function openQuickLog(k, slot, idx = null) {
+function openQuickLog(k, slot, idx = null, pre = null) {
   const cur = idx != null ? state.plan[k]?.m[slot]?.[idx] : null;
-  const recent = []; const seen = new Set();
+  const favs = state.favQuick || [], recent = []; const seen = new Set(favs.map((f) => f.n));
   for (const dk of Object.keys(state.plan).sort().reverse()) for (const s in state.plan[dk].m) for (const it of state.plan[dk].m[s]) if (it.qn && !seen.has(it.qn)) { seen.add(it.qn); recent.push([it.qn, it.qk]); }
-  const d = { name: cur?.qn || '', kcal: cur?.qk ?? '', src: cur?.src || 'buy', slot, eaten: cur ? !!cur.eaten : k <= todayKey(), note: cur?.note || '', s: cur?.s || 1 };
+  const d = { name: pre?.name ?? cur?.qn ?? '', kcal: pre?.kcal ?? cur?.qk ?? '', src: cur?.src || 'buy', slot, eaten: cur ? !!cur.eaten : k <= todayKey(), note: pre?.note ?? cur?.note ?? '', s: cur?.s || 1, img: pre?.img ?? cur?.qi ?? '' };
+  d.fav = favs.some((f) => f.n === String(d.name).trim());
   const m = openModal('', {
     cls: 'small quick-sheet',
     onClick: (e) => {
@@ -1276,7 +1402,10 @@ function openQuickLog(k, slot, idx = null) {
       const a2 = b.dataset.m;
       if (a2 === 'src') d.src = b.dataset.v;
       if (a2 === 'slot') d.slot = b.dataset.v;
-      if (a2 === 'preset') { d.name = b.dataset.n; d.kcal = +b.dataset.k; }
+      if (a2 === 'preset') { d.name = b.dataset.n; d.kcal = +b.dataset.k; d.fav = favs.some((f) => f.n === d.name); }
+      if (a2 === 'fav') d.fav = !d.fav;
+      if (a2 === 'rm-img') d.img = '';
+      if (a2 === 'ai') { closeModal(m); openPhotoAI(k, d.slot); return; }
       if (a2 === 'kstep') d.kcal = Math.max(0, num(d.kcal) + +b.dataset.v);
       if (a2 === 'eaten') d.eaten = !d.eaten;
       if (a2 === 'save') return doSave();
@@ -1286,22 +1415,30 @@ function openQuickLog(k, slot, idx = null) {
   });
   function sync() { const S = m.sheet; if (!$('#ql-name', S)) return; d.name = $('#ql-name', S).value; d.kcal = $('#ql-kcal', S).value; d.note = $('#ql-note', S).value; }
   function draw() {
-    const presets = [...recent.slice(0, 6), ...QUICK_PRESETS.filter(([n]) => !seen.has(n))].slice(0, 12);
+    const presets = [...favs.map((f) => [f.n, f.k, 1]), ...recent.slice(0, 6), ...QUICK_PRESETS.filter(([n]) => !seen.has(n))].slice(0, Math.max(12, favs.length + 4));
     m.sheet.innerHTML = `<div class="modal-head"><div><p class="eyebrow">${dayLabel(k)}</p><h3>${cur ? 'แก้ไขบันทึก' : 'บันทึกกินนอกบ้าน'}</h3></div>${closeBtn}</div>
+      ${d.img ? `<div class="ql-photo"><img src="${esc(d.img)}" alt=""><button class="x-btn on-photo" data-m="rm-img" aria-label="เอารูปออก">${ic('x')}</button></div>`
+        : cur ? '' : `<button class="ai-cta" data-m="ai"><span class="ai-ic">${ic('camera')}</span><span><b>ถ่ายรูปให้ AI ช่วยนับแคลอรี่</b><small>ไม่ต้องพิมพ์ ไม่ต้องเดา</small></span>${ic('right')}</button>`}
       <div class="field"><span class="lbl">ได้มาจาก</span><div class="seg wide">${Object.entries(SOURCES).filter(([v]) => v !== 'home').map(([v, l]) => `<button class="${d.src === v ? 'on' : ''}" data-m="src" data-v="${v}">${l}</button>`).join('')}</div></div>
       <label class="field"><span>กินอะไร</span><input id="ql-name" value="${esc(d.name)}" placeholder="เช่น ข้าวมันไก่ร้านประจำ" maxlength="60" autocomplete="off"></label>
-      <div class="ql-presets">${presets.map(([n, kc]) => `<button class="qchip" data-m="preset" data-n="${esc(n)}" data-k="${kc}">${esc(n)} <small>${fmt(kc)}</small></button>`).join('')}</div>
+      <div class="ql-presets">${presets.map(([n, kc, fav]) => `<button class="qchip ${fav ? 'fav' : ''}" data-m="preset" data-n="${esc(n)}" data-k="${kc}">${fav ? ic('heart') : ''}${esc(n)} <small>${fmt(kc)}</small></button>`).join('')}</div>
       <div class="field"><span class="lbl">แคลอรี่โดยประมาณ</span>
         <div class="kcal-step"><button class="icon-btn" data-m="kstep" data-v="-50" aria-label="ลด">${ic('minus')}</button><div class="inp-unit"><input id="ql-kcal" type="number" min="0" step="10" value="${d.kcal}" placeholder="0" inputmode="numeric"><em>kcal</em></div><button class="icon-btn" data-m="kstep" data-v="50" aria-label="เพิ่ม">${ic('plus')}</button></div>
         <p class="muted small">ไม่แน่ใจ? กดเลือกเมนูใกล้เคียงด้านบนเพื่อใช้ค่าประมาณ</p></div>
       <div class="field"><span class="lbl">มื้อ</span><div class="chips wrap">${SLOT_ORDER.map((s) => `<button class="chip ${d.slot === s ? 'on' : ''}" data-m="slot" data-v="${s}">${SLOTS[s].short}</button>`).join('')}</div></div>
       <label class="field"><span>โน้ต (ถ้ามี)</span><input id="ql-note" value="${esc(d.note)}" placeholder="เช่น ร้านป้าแดง หน้าออฟฟิศ" maxlength="80"></label>
-      <button class="eat-toggle ${d.eaten ? 'on' : ''}" data-m="eaten"><span class="et-box">${ic('check')}</span><span><b>${d.eaten ? 'กินแล้ว' : 'ยังไม่ได้กิน'}</b><small>ใช้นับแคลอรี่ที่กินจริง</small></span></button>
+      <div class="ql-toggles">
+        <button class="eat-toggle ${d.eaten ? 'on' : ''}" data-m="eaten"><span class="et-box">${ic('check')}</span><span><b>${d.eaten ? 'กินแล้ว' : 'ยังไม่ได้กิน'}</b><small>ใช้นับแคลอรี่ที่กินจริง</small></span></button>
+        <button class="eat-toggle fav-toggle ${d.fav ? 'on' : ''}" data-m="fav"><span class="et-box">${ic('heart')}</span><span><b>${d.fav ? 'เมนูโปรด' : 'เก็บเป็นเมนูโปรด'}</b><small>ครั้งหน้าแตะเดียวจบ · สุ่มได้</small></span></button>
+      </div>
       <div class="modal-foot">${cur ? `<button class="btn ghost danger-text" data-m="del">${ic('trash')} ลบ</button>` : ''}<span class="grow"></span><button class="btn ghost" data-act="close">ยกเลิก</button><button class="btn primary" data-m="save">${ic('check')} บันทึก</button></div>`;
   }
   function doSave() {
     const name = d.name.trim(); if (!name) { toast('ใส่ชื่ออาหารก่อนนะ'); $('#ql-name', m.sheet).focus(); return; }
     const entry = { qn: name, qk: Math.round(num(d.kcal)), src: d.src, s: d.s, eaten: d.eaten, note: d.note.trim() };
+    if (d.img) entry.qi = d.img;
+    state.favQuick = (state.favQuick || []).filter((f) => f.n !== name);
+    if (d.fav) state.favQuick.unshift({ n: name, k: entry.qk });
     const day = getDay(k, true);
     if (cur) day.m[slot].splice(idx, 1);
     if (!day.slots.includes(d.slot)) day.slots.push(d.slot);
@@ -1402,6 +1539,264 @@ function openResetModal() {
     }
     state = fresh; buildIng(); save(); closeModal(m); render();
     toast(ctx.mode === 'blank' ? 'เริ่มจาก 0 แล้ว เพิ่มเมนูแรกได้เลย' : 'เริ่มใหม่แบบมีตัวอย่างแล้ว');
+  }
+  draw();
+}
+
+/* ---------- AI ประเมินแคลอรี่จากรูป (Gemini ฟรี หรือ Claude) ----------
+   แอปนี้ไม่มีเซิร์ฟเวอร์ เลยเรียก API จากเบราว์เซอร์ตรง ๆ ด้วยคีย์ของผู้ใช้เอง
+   ดูจากหน้าตาคีย์ว่าเป็นของเจ้าไหน: AIza… หรือ AQ.… = Gemini, sk-ant-… = Claude
+   คีย์เก็บแยกจาก state (ไม่ติดไปในไฟล์สำรอง) */
+const AI_KEY = 'calicat:ai-key';
+const AI_MODEL = 'claude-opus-5-5';
+const AI_SDK = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.134.0/+esm';
+const GEMINI_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash']; // ตัวแรกเร็วและมีโควตาฟรี ถ้าใช้ไม่ได้ค่อยลองตัวถัดไป
+const aiKey = () => { try { return localStorage.getItem(AI_KEY) || ''; } catch { return ''; } };
+const aiProvider = (k = aiKey()) => (/^(AIza|AQ\.)/.test(k) ? 'gemini' : /^sk-ant-/.test(k) ? 'claude' : '');
+const AI_NAME = { gemini: 'Google Gemini (ฟรี)', claude: 'Claude' };
+const FOOD_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['is_food', 'name', 'items', 'total_kcal', 'confidence', 'note'],
+  properties: {
+    is_food: { type: 'boolean' },
+    name: { type: 'string' },
+    items: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'portion', 'kcal'], properties: { name: { type: 'string' }, portion: { type: 'string' }, kcal: { type: 'integer' } } } },
+    total_kcal: { type: 'integer' },
+    confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+    note: { type: 'string' },
+  },
+};
+const FOOD_PROMPT = `คุณเป็นนักโภชนาการที่ช่วยประเมินแคลอรี่อาหารจากรูปถ่าย สำหรับแอปนับแคลอรี่ของคนไทย
+ดูรูปแล้วระบุอาหารทุกอย่างที่เห็นในจาน/ภาชนะ ประเมินปริมาณจากขนาดภาชนะ ช้อน หรือมือที่อยู่ในรูป แล้วประเมินแคลอรี่ของแต่ละอย่าง
+- name: ชื่ออาหารภาษาไทยสั้น ๆ แบบที่คนไทยเรียก เช่น "ข้าวผัดกะเพราหมูสับ + ไข่ดาว"
+- items: แยกส่วนประกอบหลัก (เช่น ข้าวสวย, กะเพราหมู, ไข่ดาว) พร้อม portion เป็นภาษาไทย เช่น "1 ทัพพี", "1 ฟอง" และ kcal เป็นจำนวนเต็ม
+- total_kcal: ผลรวมแคลอรี่ทั้งหมดในรูป (ถ้ามีหลายที่ ให้นับทั้งหมดที่เห็น)
+- คิดน้ำมันที่ใช้ผัด/ทอด น้ำจิ้ม และเครื่องดื่มที่เห็นด้วย อาหารไทยนอกบ้านมักมีน้ำมันและน้ำตาลมากกว่าที่ทำเอง
+- confidence: low ถ้ามองไม่ชัดหรือเดาปริมาณยาก
+- note: ภาษาไทย 1 ประโยค บอกสิ่งที่ทำให้แคลอรี่สูง/ต่ำ หรือคำแนะนำสั้น ๆ
+ถ้ารูปไม่ใช่อาหารหรือเครื่องดื่ม ให้ is_food เป็น false, items ว่าง, total_kcal 0 และบอกเหตุผลใน note`;
+const aiUserText = (hint) => (hint ? `ข้อมูลเพิ่มเติมจากผู้ใช้: ${hint}` : 'ประเมินแคลอรี่อาหารในรูปนี้');
+async function analyzeFood(dataUrl, hint) {
+  return aiProvider() === 'gemini' ? analyzeGemini(dataUrl, hint) : analyzeClaude(dataUrl, hint);
+}
+/* Gemini ใช้ schema แบบ OpenAPI: ไม่มี additionalProperties และชื่อ type เป็นตัวใหญ่ */
+function toGeminiSchema(s) {
+  const o = { type: s.type.toUpperCase() };
+  if (s.enum) o.enum = s.enum;
+  if (s.items) o.items = toGeminiSchema(s.items);
+  if (s.properties) { o.properties = Object.fromEntries(Object.entries(s.properties).map(([k, v]) => [k, toGeminiSchema(v)])); o.required = s.required; o.propertyOrdering = Object.keys(s.properties); }
+  return o;
+}
+async function analyzeGemini(dataUrl, hint) {
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: FOOD_PROMPT }] },
+    contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'image/jpeg', data: dataUrl.split(',')[1] } }, { text: aiUserText(hint) }] }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: toGeminiSchema(FOOD_SCHEMA) },
+  });
+  let j;
+  for (const model of GEMINI_MODELS) {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': aiKey() }, body });
+    j = await r.json().catch(() => ({}));
+    if (r.ok) break;
+    if (r.status === 404 && model !== GEMINI_MODELS[GEMINI_MODELS.length - 1]) continue; // รุ่นนี้ถูกปิดไปแล้ว ลองรุ่นถัดไป
+    throw Object.assign(new Error(j.error?.message || `HTTP ${r.status}`), { status: r.status, gstatus: j.error?.status, provider: 'gemini' });
+  }
+  const c = j.candidates?.[0];
+  if (j.promptFeedback?.blockReason || !c) throw Object.assign(new Error('blocked'), { code: 'refusal' });
+  if (c.finishReason === 'MAX_TOKENS') throw Object.assign(new Error('cut'), { code: 'cut' });
+  const txt = (c.content?.parts || []).map((p) => p.text || '').join('');
+  if (!txt) throw Object.assign(new Error('blocked'), { code: 'refusal' });
+  return JSON.parse(txt);
+}
+async function analyzeClaude(dataUrl, hint) {
+  const { default: Anthropic } = await import(AI_SDK);
+  const client = new Anthropic({ apiKey: aiKey(), dangerouslyAllowBrowser: true, maxRetries: 1 });
+  const body = {
+    model: AI_MODEL,
+    max_tokens: 16000,
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: FOOD_SCHEMA } },
+    system: FOOD_PROMPT,
+    messages: [{ role: 'user', content: [
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: dataUrl.split(',')[1] } },
+      { type: 'text', text: aiUserText(hint) },
+    ] }],
+  };
+  let res;
+  // ถ้า AI ปฏิเสธรูป ให้เซิร์ฟเวอร์ลองโมเดลสำรองให้เอง; บัญชีที่ยังใช้ beta นี้ไม่ได้ก็ส่งแบบปกติแทน
+  try { res = await client.beta.messages.create({ ...body, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }); }
+  catch (e) { if (e?.status === 400 && /fallback|beta/i.test(e?.message || '')) res = await client.messages.create(body); else throw e; }
+  if (res.stop_reason === 'refusal') throw Object.assign(new Error('refusal'), { code: 'refusal' });
+  if (res.stop_reason === 'max_tokens') throw Object.assign(new Error('cut'), { code: 'cut' });
+  const txt = res.content.find((b) => b.type === 'text')?.text;
+  return JSON.parse(txt);
+}
+function aiErrorText(e) {
+  const s = e?.status;
+  if (s === 401 || s === 403 || (s === 400 && /api key|API_KEY/i.test(e?.message || ''))) return 'คีย์ API ไม่ถูกต้อง หรือหมดสิทธิ์ใช้งาน ลองตรวจคีย์อีกครั้งนะ';
+  if (s === 429 && e?.provider === 'gemini') return 'โควตาฟรีเต็มแล้ว ถ้าเพิ่งส่งหลายรูปติดกัน รอ 1 นาทีแล้วลองใหม่ ถ้าใช้ครบโควตาของวันแล้ว จะรีเซ็ตทุกวันราวบ่าย 2–3 โมง';
+  if (s === 429) return 'เรียกใช้ถี่เกินไป รอสักครู่แล้วลองใหม่นะ';
+  if (s === 400 && /credit|billing|balance/i.test(e?.message || '')) return 'เครดิต API หมดแล้ว เติมเครดิตที่ console.anthropic.com ก่อนนะ';
+  if (s >= 500) return 'เซิร์ฟเวอร์ AI มีปัญหาชั่วคราว ลองใหม่อีกทีนะ';
+  if (e?.code === 'refusal') return 'AI ประเมินรูปนี้ไม่ได้ ลองถ่ายใหม่หรือใช้รูปอื่นนะ';
+  if (!navigator.onLine || /fetch|network|import/i.test(e?.message || '')) return 'ต่อเน็ตไม่ได้ ฟีเจอร์นี้ต้องใช้อินเทอร์เน็ตนะ';
+  return 'วิเคราะห์ไม่สำเร็จ ลองใหม่อีกครั้งนะ';
+}
+function openPhotoAI(k, slot, { setup = false } = {}) {
+  const ctx = { k, slot, step: aiKey() && !setup ? 'pick' : 'key', img: '', thumb: '', res: null, err: '', mult: 1, hint: '' };
+  const m = openModal('', {
+    cls: 'small ai-sheet',
+    onClick: (e) => {
+      const b = e.target.closest('[data-m]'); if (!b) return;
+      const a = b.dataset.m;
+      if (a === 'save-key') {
+        const v = $('#ai-key', m.sheet).value.trim();
+        if (!aiProvider(v)) return toast('คีย์ไม่ถูกรูปแบบ: Gemini ขึ้นต้นด้วย AIza หรือ AQ. ส่วน Claude ขึ้นต้นด้วย sk-ant-');
+        try { localStorage.setItem(AI_KEY, v); } catch { return toast('บันทึกคีย์ไม่ได้'); }
+        ctx.step = 'pick'; toast('บันทึกคีย์แล้ว'); if (ui.tab === 'me') renderMain(false);
+      }
+      if (a === 'retry') return run();
+      if (a === 'again') { ctx.step = 'pick'; ctx.img = ''; ctx.res = null; ctx.err = ''; ctx.mult = 1; }
+      if (a === 'slot') ctx.slot = b.dataset.v;
+      if (a === 'mult') ctx.mult = Math.max(0.25, Math.min(4, ctx.mult + +b.dataset.v));
+      if (a === 'save' || a === 'edit') {
+        const r = ctx.res, kc = Math.round(r.total_kcal * ctx.mult);
+        const name = r.name;
+        const note = `${ctx.mult !== 1 ? `กิน ×${fmtQ(ctx.mult)} · ` : ''}AI ประเมิน: ${r.items.map((x) => `${x.name} ${x.kcal}`).join(', ')}`.slice(0, 80);
+        if (a === 'edit') { closeModal(m); openQuickLog(ctx.k, ctx.slot, null, { name, kcal: kc, img: ctx.thumb, note }); return; }
+        const day = getDay(ctx.k, true); if (!day.slots.includes(ctx.slot)) day.slots.push(ctx.slot);
+        (day.m[ctx.slot] ||= []).push({ qn: name, qk: kc, src: 'out', s: 1, eaten: ctx.k <= todayKey(), note, qi: ctx.thumb });
+        if (!save()) { day.m[ctx.slot].pop(); return; }
+        closeModal(m); refreshAll(); toast(`บันทึก ${name} ${fmt(kc)} kcal แล้ว`); return;
+      }
+      draw();
+    },
+  });
+  m.sheet.addEventListener('change', async (e) => {
+    const t = e.target; if (!t.matches('.ai-file') || !t.files[0]) return;
+    try { [ctx.img, ctx.thumb] = await Promise.all([resizeImage(t.files[0], 1024), resizeImage(t.files[0], 240)]); }
+    catch { toast('เปิดรูปนี้ไม่ได้'); return; }
+    t.value = ''; run();
+  });
+  m.sheet.addEventListener('input', (e) => { if (e.target.id === 'ai-hint') ctx.hint = e.target.value; });
+  async function run() {
+    ctx.step = 'busy'; ctx.err = ''; draw();
+    try {
+      ctx.res = await analyzeFood(ctx.img, ctx.hint.trim());
+      ctx.step = ctx.res.is_food ? 'done' : 'notfood';
+    } catch (e) { ctx.err = aiErrorText(e); ctx.step = 'error'; }
+    if (modals.includes(m)) draw();
+  }
+  const CONF = { low: ['ไม่ค่อยแน่ใจ', 'low'], medium: ['ค่อนข้างแน่ใจ', 'mid'], high: ['มั่นใจ', 'high'] };
+  function draw() {
+    const head = `<div class="modal-head"><div><p class="eyebrow">${ic('spark')} AI นับแคลอรี่ · ${ctx.k === todayKey() ? 'วันนี้' : dayLabel(ctx.k)}</p><h3>${{ key: 'ตั้งค่าครั้งแรก', pick: 'ถ่ายรูปอาหาร', busy: 'กำลังดูจานนี้…', done: 'ได้ผลแล้ว', notfood: 'อืม… ไม่เจออาหาร', error: 'มีบางอย่างผิดพลาด' }[ctx.step]}</h3></div>${closeBtn}</div>`;
+    const pic = ctx.img ? `<div class="ai-pic ${ctx.step === 'busy' ? 'scan' : ''}"><img src="${ctx.img}" alt="">${ctx.step === 'busy' ? '<span class="scan-line"></span>' : ''}</div>` : '';
+    let body = '';
+    if (ctx.step === 'key') body = `<div class="ai-setup">${catSVG()}<p>ให้ AI ดูรูปแล้วประเมินแคลอรี่ ต้องใส่ <b>API key</b> ครั้งเดียว<br><small class="muted">ใช้ Gemini ของ Google ได้ <b>ฟรี</b> แค่มีบัญชี Google</small></p>
+        <ol class="ai-steps"><li>เปิด <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> แล้วล็อกอินด้วยบัญชี Google</li><li>กด <b>Create API key</b> (ไม่ต้องผูกบัตร)</li><li>คัดลอกคีย์ (ขึ้นต้นด้วย <b>AQ.</b> หรือ <b>AIza</b>) มาวางด้านล่าง</li></ol>
+        <label class="field"><span>API key</span><input id="ai-key" type="password" placeholder="AQ.... หรือ AIza..." autocomplete="off" spellcheck="false"></label>
+        <p class="muted small">แบบฟรีมีโควตาต่อวัน (รีเซ็ตทุกวัน) และ Google อาจนำรูปที่ส่งไปใช้พัฒนาระบบ · มีคีย์ Claude (sk-ant-…) ก็ใส่แทนได้ · คีย์เก็บไว้ในเครื่องนี้เท่านั้น ไม่ติดไปในไฟล์สำรอง</p></div>
+      <div class="modal-foot"><span class="grow"></span><button class="btn ghost" data-act="close">ไว้ทีหลัง</button><button class="btn primary" data-m="save-key">${ic('check')} บันทึกคีย์</button></div>`;
+    if (ctx.step === 'pick') body = `<div class="ai-pick">
+        <label class="ai-shot">${ic('camera')}<b>ถ่ายรูป</b><small>ถ่ายจากด้านบน เห็นทั้งจาน</small><input class="ai-file" type="file" accept="image/*" capture="environment" hidden></label>
+        <label class="ai-shot alt">${ic('image')}<b>เลือกจากคลังรูป</b><small>รูปที่ถ่ายไว้แล้ว</small><input class="ai-file" type="file" accept="image/*" hidden></label></div>
+      <label class="field"><span>บอก AI เพิ่ม (ไม่ใส่ก็ได้)</span><input id="ai-hint" value="${esc(ctx.hint)}" placeholder="เช่น หมูกรอบ ไม่ใส่น้ำตาล กินไปครึ่งจาน" maxlength="100"></label>`;
+    if (ctx.step === 'busy') body = `${pic}<p class="ai-wait">${catSVG()}<span>แมวกำลังส่องจานอยู่ รอแป๊บนึงนะ…</span></p>`;
+    if (ctx.step === 'error' || ctx.step === 'notfood') body = `${pic}<div class="warn-box ${ctx.step === 'error' ? 'allergy' : 'dislike'}">${esc(ctx.step === 'error' ? ctx.err : ctx.res?.note || 'ลองถ่ายให้เห็นอาหารชัด ๆ อีกครั้งนะ')}</div>
+      <div class="modal-foot"><button class="btn ghost" data-m="again">${ic('camera')} รูปใหม่</button><span class="grow"></span>${ctx.step === 'error' ? `<button class="btn primary" data-m="retry">ลองอีกครั้ง</button>` : ''}</div>`;
+    if (ctx.step === 'done') {
+      const r = ctx.res, c = CONF[r.confidence] || CONF.medium;
+      body = `${pic}<div class="ai-result">
+          <div class="ai-total"><div><h3>${esc(r.name)}</h3><span class="conf ${c[1]}">${c[0]}</span></div><p><b>${fmt(r.total_kcal * ctx.mult)}</b><small>kcal</small></p></div>
+          <ul class="ai-items">${r.items.map((x) => `<li><span>${esc(x.name)}</span><small>${esc(x.portion)}</small><b>${fmt(x.kcal * ctx.mult)}</b></li>`).join('')}</ul>
+          ${r.note ? `<p class="note small">${esc(r.note)}</p>` : ''}
+          <div class="field"><span class="lbl">กินไปเท่าไหร่</span><div class="stepper"><button class="icon-btn" data-m="mult" data-v="-0.25" aria-label="ลด">${ic('minus')}</button><b>${ctx.mult === 1 ? 'ทั้งจาน' : `×${fmtQ(ctx.mult)}`}</b><button class="icon-btn" data-m="mult" data-v="0.25" aria-label="เพิ่ม">${ic('plus')}</button></div></div>
+          <div class="field"><span class="lbl">มื้อ</span><div class="chips wrap">${SLOT_ORDER.map((s) => `<button class="chip ${ctx.slot === s ? 'on' : ''}" data-m="slot" data-v="${s}">${SLOTS[s].short}</button>`).join('')}</div></div>
+          <p class="muted small">* ค่าประมาณจาก AI อาจคลาดเคลื่อนได้ ปรับแก้ได้ก่อนบันทึก</p></div>
+        <div class="modal-foot"><button class="btn ghost" data-m="again">${ic('camera')} รูปใหม่</button><span class="grow"></span><button class="btn ghost" data-m="edit">${ic('edit')} แก้ไข</button><button class="btn primary" data-m="save">${ic('check')} บันทึก</button></div>`;
+    }
+    m.sheet.innerHTML = head + body;
+  }
+  draw();
+}
+
+/* นำเข้าข้อมูล: ค่าเริ่มต้นคือ "รวม" กับของเดิม (แพลนเดิมไม่หาย) และเก็บสำเนาไว้ย้อนกลับได้ */
+const UNDO_KEY = 'calicat:before-import';
+function mergeState(cur, inc, opt) {
+  const out = clone(cur), low = (x) => String(x || '').trim().toLowerCase();
+  if (opt.menus) {
+    const remap = {};
+    for (const c of inc.customIngs || []) {
+      const same = out.customIngs.find((x) => x.id === c.id);
+      if (same) { Object.assign(same, c); continue; }
+      const byName = out.customIngs.find((x) => low(x.name) === low(c.name)) || (!out.settings.noBase && Object.values(BASE_ING).find((x) => low(x.name) === low(c.name)));
+      if (byName) remap[c.id] = byName.id; else out.customIngs.push(clone(c));
+    }
+    out.ingMeta = { ...out.ingMeta, ...(inc.ingMeta || {}) };
+    if (inc.settings?.noBase === false || (inc.recipes || []).some((r) => r.ing?.some((x) => BASE_ING[x.id]))) out.settings.noBase = false;
+    for (const r of inc.recipes || []) {
+      const nr = { ...clone(r), ing: (r.ing || []).map((x) => ({ ...x, id: remap[x.id] || x.id })) };
+      const i = out.recipes.findIndex((x) => x.id === r.id);
+      if (i >= 0) out.recipes[i] = { ...nr, fav: !!(nr.fav || out.recipes[i].fav) }; else out.recipes.push(nr);
+    }
+    const fq = new Set(out.favQuick.map((f) => f.n));
+    for (const f of inc.favQuick || []) if (!fq.has(f.n)) out.favQuick.push(f);
+  }
+  if (opt.plan) {
+    for (const [k, day] of Object.entries(inc.plan || {})) {
+      const d = out.plan[k];
+      if (!d) { out.plan[k] = clone(day); continue; }
+      d.slots = SLOT_ORDER.filter((s) => d.slots.includes(s) || (day.slots || []).includes(s));
+      for (const [s, items] of Object.entries(day.m || {})) {
+        const have = new Set((d.m[s] || []).map((it) => JSON.stringify({ ...it, eaten: 0 })));
+        for (const it of items) if (!have.has(JSON.stringify({ ...it, eaten: 0 }))) (d.m[s] ||= []).push(clone(it));
+      }
+    }
+  }
+  if (opt.water) {
+    for (const [k, v] of Object.entries(inc.water || {})) if ((out.water[k] || 0) < v) { out.water[k] = v; if (inc.waterLog?.[k]) out.waterLog[k] = clone(inc.waterLog[k]); else delete out.waterLog[k]; }
+  }
+  if (opt.profile) {
+    const noBase = out.settings.noBase;
+    out.settings = { ...out.settings, ...(inc.settings || {}), noBase };
+    out.profile = { ...out.profile, ...(inc.profile || {}) };
+  }
+  return out;
+}
+function openImportModal(inc) {
+  const days = Object.values(inc.plan || {}).filter((d) => Object.values(d.m || {}).some((x) => x?.length)).length;
+  const ctx = { mode: 'merge', menus: true, plan: true, water: true, profile: false };
+  const counts = { menus: `${(inc.recipes || []).length} เมนู · ${(inc.customIngs || []).length} วัตถุดิบที่เพิ่มเอง`, plan: `${days} วัน`, water: `${Object.keys(inc.water || {}).length} วัน`, profile: 'ชื่อ เป้าหมาย อาหารที่แพ้' };
+  const labels = { menus: 'เมนู & วัตถุดิบ', plan: 'แพลน & บันทึกการกิน', water: 'ประวัติดื่มน้ำ', profile: 'โปรไฟล์ & ตั้งค่า' };
+  const m = openModal('', {
+    cls: 'small reset-sheet',
+    onClick: (e) => {
+      const b = e.target.closest('[data-m]'); if (!b) return;
+      if (b.dataset.m === 'mode') ctx.mode = b.dataset.v;
+      if (b.dataset.m === 'pick') ctx[b.dataset.v] = !ctx[b.dataset.v];
+      if (b.dataset.m === 'go') return go();
+      draw();
+    },
+  });
+  function draw() {
+    const merge = ctx.mode === 'merge';
+    m.sheet.innerHTML = `<div class="modal-head"><div><p class="eyebrow">นำเข้าข้อมูล</p><h3>จะนำเข้ายังไงดี?</h3></div>${closeBtn}</div>
+      <div class="reset-opts">
+        <button class="reset-opt ${merge ? 'on' : ''}" data-m="mode" data-v="merge"><span class="ro-dot"></span><span><b>รวมกับข้อมูลเดิม <small class="tag-rec">แนะนำ</small></b><small>เพิ่มเมนู/วัตถุดิบจากไฟล์ แพลนเดิมยังอยู่ครบ วันที่ซ้ำกันจะรวมรายการเข้าด้วยกัน</small></span></button>
+        <button class="reset-opt ${merge ? '' : 'on'}" data-m="mode" data-v="replace"><span class="ro-dot"></span><span><b>แทนที่ทั้งหมด</b><small>ลบข้อมูลในเครื่องนี้แล้วใช้ข้อมูลจากไฟล์แทน (ใช้ตอนย้ายเครื่อง)</small></span></button>
+      </div>
+      ${merge ? `<p class="sub-title">เลือกสิ่งที่จะนำเข้า</p><div class="imp-picks">${Object.keys(labels).map((k) => `<button class="eat-toggle ${ctx[k] ? 'on' : ''}" data-m="pick" data-v="${k}"><span class="et-box">${ic('check')}</span><span><b>${labels[k]}</b><small>${counts[k]}</small></span></button>`).join('')}</div>`
+        : `<div class="warn-box allergy"><b>แพลนและเมนูในเครื่องนี้จะถูกแทนที่</b> ถ้าเปลี่ยนใจ กด “ย้อนการนำเข้า” ในหน้าโปรไฟล์ได้</div>`}
+      <div class="modal-foot"><span class="grow"></span><button class="btn ghost" data-act="close">ยกเลิก</button><button class="btn primary" data-m="go">${ic('upload')} นำเข้า</button></div>`;
+  }
+  function go() {
+    if (ctx.mode === 'merge' && !['menus', 'plan', 'water', 'profile'].some((k) => ctx[k])) return toast('เลือกอย่างน้อย 1 อย่างนะ');
+    const before = JSON.stringify(state);
+    try { localStorage.setItem(UNDO_KEY, before); } catch { /* พื้นที่ไม่พอเก็บสำเนา ก็นำเข้าต่อได้ */ }
+    if (ctx.mode === 'replace') { localStorage.setItem(STORE_KEY, JSON.stringify(inc)); state = load(); }
+    else state = migrate(mergeState(state, { ...inc, recipes: (inc.recipes || []).map((r) => ({ ...r })) }, ctx));
+    buildIng();
+    if (!save()) { state = JSON.parse(before); buildIng(); return; }
+    closeModal(m); render(); toast(ctx.mode === 'merge' ? 'รวมข้อมูลแล้ว แพลนเดิมยังอยู่ครบ' : 'นำเข้าข้อมูลแล้ว');
   }
   draw();
 }
@@ -1610,8 +2005,10 @@ function openEditor(rid, opts = {}) {
 /* =========================================================
    ACTIONS
    ========================================================= */
-function pickRandom(slot, avoid) {
-  let pool = state.recipes.filter((r) => (r.slots || []).includes(slot) && r.type !== 'base' && !isAvoided(r));
+function pickRandom(slot, avoid, favOnly = false) {
+  const base = state.recipes.filter((r) => r.type !== 'base' && !isAvoided(r) && (!favOnly || r.fav));
+  let pool = base.filter((r) => (r.slots || []).includes(slot));
+  if (favOnly && !pool.length) pool = base; // เมนูโปรดไม่ได้ตั้งมื้อไว้ ก็สุ่มจากเมนูโปรดทั้งหมด
   if (pool.length > 1 && avoid) pool = pool.filter((r) => r.id !== avoid);
   return pool[Math.floor(Math.random() * pool.length)];
 }
@@ -1638,7 +2035,7 @@ const ACTIONS = {
     if (d.m[slot]?.length && !(await confirmBox(`เอา${SLOTS[slot].label}ออกจากวันนี้?<br><small>เมนูในมื้อนี้จะถูกลบด้วย</small>`, 'เอาออก', true))) return;
     d.slots = daySlots(date).filter((s) => s !== slot); delete d.m[slot]; save(); refreshAll();
   },
-  'fill-random': async () => {
+  'fill-random': async ({ fav }) => {
     const keys = viewKeys();
     const what = ui.view === 'week' ? 'สัปดาห์นี้' : ui.view === 'month' ? 'เดือนนี้' : `ทั้งปี (${keys.length} วัน)`;
     // ยังไม่มีเมนูให้สุ่มเลย
@@ -1650,12 +2047,22 @@ const ACTIONS = {
     }
     const empty = []; for (const k of keys) for (const s of daySlots(k)) if (!state.plan[k]?.m?.[s]?.length) empty.push([k, s]);
     if (!empty.length) return toast(`ทุกมื้อของ${what}มีเมนูแล้ว`);
-    if (!(await confirmBox(`สุ่มเมนูใส่มื้อที่ยังว่าง ${empty.length} มื้อของ${what}?<br><small>มื้อที่มีเมนูอยู่แล้วจะไม่ถูกแตะ</small>`, 'สุ่มเลย'))) return;
+    const favOnly = fav === '1';
+    if (favOnly) {
+      const nFav = state.recipes.filter((r) => r.fav && r.type !== 'base' && !isAvoided(r)).length;
+      if (!nFav) {
+        const m = openModal(`<div class="confirm">${catSVG()}<p>ยังไม่มีเมนูโปรดเลย<br><small>ไปที่หน้าเมนู แล้วแตะหัวใจ ${ic('heart')} ที่เมนูที่ชอบ จากนั้นกลับมากดปุ่มนี้อีกครั้ง</small></p>
+          <div class="modal-foot"><button class="btn ghost" data-act="close">ปิด</button><button class="btn primary" data-m="go">ไปเลือกเมนูโปรด</button></div></div>`,
+          { cls: 'small', onClick: (e) => { if (!e.target.closest('[data-m]')) return; closeModal(m); ui.menuType = 'all'; ACTIONS.tab({ tab: 'menus' }); } });
+        return;
+      }
+      if (!(await confirmBox(`สุ่มจาก<b>เมนูโปรด ${nFav} เมนู</b> ใส่มื้อที่ยังว่าง ${empty.length} มื้อของ${what}?<br><small>มื้อที่มีเมนูอยู่แล้วจะไม่ถูกแตะ</small>`, 'สุ่มเลย'))) return;
+    } else if (!(await confirmBox(`สุ่มเมนูใส่มื้อที่ยังว่าง ${empty.length} มื้อของ${what}?<br><small>มื้อที่มีเมนูอยู่แล้วจะไม่ถูกแตะ</small>`, 'สุ่มเลย'))) return;
     let n = 0; const last = {}, noMenu = new Set();
     for (const k of keys) for (const s of daySlots(k)) {
       const cur = state.plan[k]?.m?.[s];
       if (cur?.length) { last[s] = cur[0].rid; continue; }
-      const r = pickRandom(s, last[s]); if (!r) { noMenu.add(s); continue; }
+      const r = pickRandom(s, last[s], favOnly); if (!r) { noMenu.add(s); continue; }
       const d = getDay(k, true);
       d.m[s] = [{ rid: r.id, s: 1 }];
       if (r.type === 'side' && rec('r_rice')) d.m[s].push({ rid: 'r_rice', s: 1 });
@@ -1681,12 +2088,36 @@ const ACTIONS = {
   },
   water: ({ v }) => {
     const k = todayKey(), wg = state.settings.waterGoal || 2000, before = state.water[k] || 0;
-    state.water[k] = Math.max(0, before + +v); if (!state.water[k]) delete state.water[k];
+    addWater(k, +v);
     save(); updateWater();
     if (before < wg && (state.water[k] || 0) >= wg) toast('ดื่มน้ำครบเป้าแล้ว เก่งมาก!');
   },
+  'water-undo': () => {
+    const k = todayKey(), log = state.waterLog[k];
+    if (!state.water[k]) return toast('วันนี้ยังไม่ได้บันทึกน้ำเลย');
+    const last = log?.pop();
+    state.water[k] = Math.max(0, state.water[k] - (last ? last[1] : 250));
+    if (!state.water[k]) { delete state.water[k]; delete state.waterLog[k]; }
+    save(); updateWater(); toast(`ลบ ${last ? last[1] : 250} ml ล่าสุดแล้ว`);
+  },
+  'water-history': () => openWaterHistory(),
   'step-done': ({ rid, i }, el) => { const s = (stepDone[rid] ||= new Set()); s.has(+i) ? s.delete(+i) : s.add(+i); el.classList.toggle('done'); },
   recipe: ({ rid }) => openRecipe(rid),
+  fav: ({ rid }, el, e) => {
+    e.stopPropagation();
+    const r = rec(rid); if (!r) return;
+    r.fav = !r.fav; if (!r.fav) delete r.fav;
+    save(); renderMain(false); modals.forEach((m) => m.refresh?.());
+    toast(r.fav ? `เพิ่ม ${r.name} เป็นเมนูโปรดแล้ว` : 'เอาออกจากเมนูโปรดแล้ว');
+  },
+  'random-fav': ({ date, slot }) => openRandomFav(date || todayKey(), slot || nowSlot()),
+  'ai-photo': ({ date, slot }) => openPhotoAI(date || todayKey(), slot || nowSlot()),
+  'ai-key-set': () => openPhotoAI(todayKey(), nowSlot(), { setup: true }),
+  'ai-key-del': async () => {
+    if (!(await confirmBox('ลบ API key ออกจากเครื่องนี้?', 'ลบคีย์', true))) return;
+    try { localStorage.removeItem(AI_KEY); } catch {}
+    renderMain(false); toast('ลบคีย์แล้ว');
+  },
   'new-recipe': ({ name }) => openEditor(null, { name: name || '' }),
   addplan: ({ rid }) => openAddToPlan(rid),
   'menu-type': ({ v }) => { ui.menuType = v; $$('[data-act="menu-type"]').forEach((b) => b.classList.toggle('on', b.dataset.v === v)); $('#menu-grid').innerHTML = menuGrid(); },
@@ -1756,6 +2187,13 @@ const ACTIONS = {
     toast('ดาวน์โหลดไฟล์สำรองแล้ว');
   },
   'reset-all': () => openResetModal(),
+  'undo-import': async () => {
+    let raw = null; try { raw = localStorage.getItem(UNDO_KEY); } catch {}
+    if (!raw) return;
+    if (!(await confirmBox('ย้อนกลับไปเป็นข้อมูลก่อนนำเข้าครั้งล่าสุด?<br><small>สิ่งที่แก้ไขหลังนำเข้าจะหายไปด้วย</small>', 'ย้อนกลับ'))) return;
+    localStorage.setItem(STORE_KEY, raw); localStorage.removeItem(UNDO_KEY);
+    state = load(); buildIng(); render(); toast('ย้อนกลับแล้ว');
+  },
   'restore-samples': async ({ what }) => {
     const withRecipes = what === 'recipes';
     const msg = withRecipes ? `เพิ่มเมนูตัวอย่าง ${SEED_RECIPES.length} เมนู?<br><small>วัตถุดิบตั้งต้นจะถูกเปิดใช้ด้วย เพราะเมนูตัวอย่างใช้วัตถุดิบเหล่านี้</small>` : `เปิดใช้วัตถุดิบตั้งต้น ${Object.keys(BASE_ING).length} อย่าง?<br><small>วัตถุดิบที่คุณเพิ่มเองยังอยู่ครบ</small>`;
@@ -1801,9 +2239,8 @@ document.addEventListener('change', (e) => {
     fr.onload = async () => {
       try {
         const s = JSON.parse(fr.result);
-        if (!s || !Array.isArray(s.recipes) || typeof s.plan !== 'object') throw new Error('bad');
-        if (!(await confirmBox('นำเข้าข้อมูลจากไฟล์นี้?<br><small>ข้อมูลปัจจุบันจะถูกแทนที่</small>', 'นำเข้า'))) return;
-        localStorage.setItem(STORE_KEY, JSON.stringify(s)); state = load(); buildIng(); render(); toast('นำเข้าข้อมูลแล้ว');
+        if (!s || typeof s !== 'object' || (!Array.isArray(s.recipes) && !s.plan && !Array.isArray(s.customIngs))) throw new Error('bad');
+        openImportModal(s);
       } catch { toast('ไฟล์ไม่ถูกต้อง'); }
     };
     fr.readAsText(t.files[0]); t.value = '';
