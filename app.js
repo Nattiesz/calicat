@@ -163,6 +163,7 @@ function defaultState() {
     water: {},
     waterLog: {}, // { 'YYYY-MM-DD': [[timestamp, ml], ...] } ประวัติการดื่มแต่ละครั้ง
     favQuick: [], // เมนูโปรดที่กินนอกบ้าน/ซื้อมา: [{ n, k }]
+    aiFix: [], // ค่าที่ผู้ใช้แก้จาก AI: [{ n, ai, user }] ส่งให้ AI ใช้ปรับครั้งหน้า
   };
 }
 function seedDemo(s) {
@@ -189,7 +190,7 @@ function load() {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) {
       const s = JSON.parse(raw), d = defaultState();
-      return migrate({ ...d, ...s, water: s.water || {}, waterLog: s.waterLog || {}, favQuick: s.favQuick || [], ingMeta: s.ingMeta || {}, settings: { ...d.settings, ...s.settings }, profile: { ...d.profile, ...s.profile } });
+      return migrate({ ...d, ...s, water: s.water || {}, waterLog: s.waterLog || {}, favQuick: s.favQuick || [], aiFix: s.aiFix || [], ingMeta: s.ingMeta || {}, settings: { ...d.settings, ...s.settings }, profile: { ...d.profile, ...s.profile } });
     }
   } catch (e) { /* ignore */ }
   const s = defaultState();
@@ -1437,6 +1438,10 @@ function openQuickLog(k, slot, idx = null, pre = null) {
     const name = d.name.trim(); if (!name) { toast('ใส่ชื่ออาหารก่อนนะ'); $('#ql-name', m.sheet).focus(); return; }
     const entry = { qn: name, qk: Math.round(num(d.kcal)), src: d.src, s: d.s, eaten: d.eaten, note: d.note.trim() };
     if (d.img) entry.qi = d.img;
+    if (pre?.aiKcal != null && Math.abs(entry.qk - pre.aiKcal) >= Math.max(30, pre.aiKcal * 0.1)) {
+      // ผู้ใช้แก้ตัวเลขที่ AI ประเมิน → จำไว้ให้ AI ใช้ปรับครั้งหน้า
+      state.aiFix = [{ n: name, ai: pre.aiKcal, user: entry.qk }, ...(state.aiFix || []).filter((f) => f.n !== name)].slice(0, 20);
+    }
     state.favQuick = (state.favQuick || []).filter((f) => f.n !== name);
     if (d.fav) state.favQuick.unshift({ n: name, k: entry.qk });
     const day = getDay(k, true);
@@ -1550,7 +1555,7 @@ function openResetModal() {
 const AI_KEY = 'calicat:ai-key';
 const AI_MODEL = 'claude-opus-5-5';
 const AI_SDK = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.134.0/+esm';
-const GEMINI_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash']; // ตัวแรกเร็วและมีโควตาฟรี ถ้าใช้ไม่ได้ค่อยลองตัวถัดไป
+const GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash-lite']; // ตัวแรกแม่นกว่า ถ้าโควตาฟรีหมดหรือใช้ไม่ได้ ค่อยใช้ตัวเบา
 const aiKey = () => { try { return localStorage.getItem(AI_KEY) || ''; } catch { return ''; } };
 const aiProvider = (k = aiKey()) => (/^(AIza|AQ\.)/.test(k) ? 'gemini' : /^sk-ant-/.test(k) ? 'claude' : '');
 const AI_NAME = { gemini: 'Google Gemini (ฟรี)', claude: 'Claude' };
@@ -1566,18 +1571,42 @@ const FOOD_SCHEMA = {
     note: { type: 'string' },
   },
 };
-const FOOD_PROMPT = `คุณเป็นนักโภชนาการที่ช่วยประเมินแคลอรี่อาหารจากรูปถ่าย สำหรับแอปนับแคลอรี่ของคนไทย
-ดูรูปแล้วระบุอาหารทุกอย่างที่เห็นในจาน/ภาชนะ ประเมินปริมาณจากขนาดภาชนะ ช้อน หรือมือที่อยู่ในรูป แล้วประเมินแคลอรี่ของแต่ละอย่าง
+const FOOD_PROMPT = `คุณเป็นนักโภชนาการชาวไทยที่ช่วยประเมินแคลอรี่อาหารจากรูปถ่าย สำหรับแอปนับแคลอรี่ ผู้ใช้อยากได้ตัวเลขที่ใกล้ความจริงที่สุด โดยไม่ต้องพิมพ์อะไรเยอะ
+
+วิธีคิด (ทำในใจตามลำดับ):
+1. ระบุอาหาร/เครื่องดื่มทุกอย่างที่เห็น รวมถึงน้ำจิ้ม ซอส ท็อปปิ้ง และเครื่องดื่มข้างจาน
+2. ประเมินปริมาณจากของอ้างอิงในรูป: จานข้าวทั่วไปกว้าง ~23 ซม. (9 นิ้ว), ช้อนกินข้าวยาว ~18 ซม., ชามก๋วยเตี๋ยว ~18 ซม., แก้วพลาสติก 16 ออนซ์, กล่องข้าวเซเว่น, มือคน
+3. ดูวิธีปรุง: ทอด/ผัด/แกงกะทิ ต้องบวกน้ำมันและกะทิ (ร้านตามสั่งมักใช้น้ำมัน 1–2 ช้อนโต๊ะต่อจาน) ต้ม/นึ่ง/ย่าง ใช้น้ำมันน้อย
+4. ถ้าเห็นฉลากโภชนาการหรือแคลอรี่บนบรรจุภัณฑ์ ให้ใช้ตัวเลขบนฉลากเป็นหลัก (ระวังจำนวนหน่วยบริโภคต่อซอง) และ confidence เป็น high
+5. ถ้าผู้ใช้ให้ข้อมูลเพิ่ม (ร้านที่ซื้อ ขนาด หวาน/มัน กินไม่หมด) ให้เชื่อข้อมูลผู้ใช้มากกว่าที่เห็นในรูป
+
+ค่าอ้างอิงโดยประมาณ (ใช้เทียบ แล้วปรับตามปริมาณที่เห็นจริง):
+- ข้าวสวย 1 ทัพพี (~55 ก.) 80 kcal · ข้าวจานร้านตามสั่ง ~2.5–3 ทัพพี 200–240 · ข้าวเหนียว 1 ห่อเล็ก (~70 ก.) 170 · ข้าวกล้อง 1 ทัพพี 80
+- เส้นก๋วยเตี๋ยว 1 ชาม 150–200 · บะหมี่เหลือง 1 ก้อน 200 · ขนมจีน 1 จับ 80
+- ไข่ต้ม 75 · ไข่ดาว 120–150 · ไข่เจียว 1 ฟอง 200–250 · น้ำมัน 1 ช้อนโต๊ะ 120 · น้ำตาล 1 ช้อนชา 20 · กะทิ 100 มล. 200
+- อกไก่สุก 100 ก. 165 · หมูสับผัด 100 ก. 250–300 · หมูกรอบ 100 ก. 450–500 · หมูสามชั้น 100 ก. 500 · ไก่ทอด 1 น่อง 250–300 · ปลาทอด 100 ก. 250 · กุ้ง 100 ก. 100
+- จานเดียวยอดนิยม: กะเพราหมูสับราดข้าว 550–600 (+ไข่ดาว 700) · ข้าวมันไก่ 550–650 · ข้าวขาหมู 650–700 · ข้าวผัด 550–650 · ผัดไทย 500–600 · ผัดซีอิ๊ว 650 · ก๋วยเตี๋ยวน้ำ 300–400 · เย็นตาโฟ 350 · ข้าวไข่เจียว 450–600 · โจ๊ก 250 · ส้มตำไทย 100–150 · ลาบ 150–200 · แกงเขียวหวาน 1 ถ้วย 250–350 · ต้มยำน้ำใส 1 ถ้วย 100–150
+- เครื่องดื่ม 16 ออนซ์ หวานปกติ: ชานมไข่มุก 350–450 · ชาเย็น/กาแฟเย็น 200–300 · น้ำอัดลม 1 กระป๋อง 140 · หวานน้อย ลด ~30%, ไม่หวาน ลด ~60–70%
+
+รูปแบบคำตอบ:
 - name: ชื่ออาหารภาษาไทยสั้น ๆ แบบที่คนไทยเรียก เช่น "ข้าวผัดกะเพราหมูสับ + ไข่ดาว"
-- items: แยกส่วนประกอบหลัก (เช่น ข้าวสวย, กะเพราหมู, ไข่ดาว) พร้อม portion เป็นภาษาไทย เช่น "1 ทัพพี", "1 ฟอง" และ kcal เป็นจำนวนเต็ม
-- total_kcal: ผลรวมแคลอรี่ทั้งหมดในรูป (ถ้ามีหลายที่ ให้นับทั้งหมดที่เห็น)
-- คิดน้ำมันที่ใช้ผัด/ทอด น้ำจิ้ม และเครื่องดื่มที่เห็นด้วย อาหารไทยนอกบ้านมักมีน้ำมันและน้ำตาลมากกว่าที่ทำเอง
-- confidence: low ถ้ามองไม่ชัดหรือเดาปริมาณยาก
-- note: ภาษาไทย 1 ประโยค บอกสิ่งที่ทำให้แคลอรี่สูง/ต่ำ หรือคำแนะนำสั้น ๆ
+- items: แยกส่วนประกอบหลัก (เช่น ข้าวสวย, กะเพราหมูสับ, น้ำมันผัด, ไข่ดาว) พร้อม portion ภาษาไทย เช่น "2.5 ทัพพี", "1 ฟอง" และ kcal เป็นจำนวนเต็ม
+- total_kcal: ผลรวมของ items (นับทุกอย่างที่ผู้ใช้กิน ถ้าบอกว่ากินไม่หมดให้หักออก)
+- confidence: high ถ้าเห็นชัดหรือมีฉลาก, medium ถ้าเดาปริมาณได้พอควร, low ถ้ามองไม่ชัดหรืออาหารซ่อนอยู่ (เช่น ในน้ำแกง)
+- note: ภาษาไทย 1 ประโยคสั้น ๆ บอกสิ่งที่ทำให้แคลอรี่สูง/ต่ำ หรือบอกว่าถ้าถ่ายมุมไหนจะแม่นขึ้น
 ถ้ารูปไม่ใช่อาหารหรือเครื่องดื่ม ให้ is_food เป็น false, items ว่าง, total_kcal 0 และบอกเหตุผลใน note`;
-const aiUserText = (hint) => (hint ? `ข้อมูลเพิ่มเติมจากผู้ใช้: ${hint}` : 'ประเมินแคลอรี่อาหารในรูปนี้');
-async function analyzeFood(dataUrl, hint) {
-  return aiProvider() === 'gemini' ? analyzeGemini(dataUrl, hint) : analyzeClaude(dataUrl, hint);
+/* ข้อความที่ส่งไปพร้อมรูป: มื้อ เวลา สิ่งที่ผู้ใช้เลือก/พิมพ์ และค่าที่ผู้ใช้เคยแก้ (ให้ AI ปรับตามนิสัยการกิน) */
+function aiUserText({ hint = '', slot = '', n = 1 } = {}) {
+  const t = new Date(), L = [];
+  if (slot) L.push(`มื้อ: ${SLOTS[slot]?.label || slot} (ตอนนี้ ${pad(t.getHours())}:${pad(t.getMinutes())} น.)`);
+  if (n > 1) L.push(`มี ${n} รูป เป็นอาหารชุดเดียวกัน (อาจเป็นคนละมุม หรือรูปฉลาก/เมนูร้าน) อย่านับซ้ำ`);
+  L.push(hint ? `ข้อมูลจากผู้ใช้: ${hint}` : 'ผู้ใช้ไม่ได้ให้ข้อมูลเพิ่ม ประเมินจากรูปอย่างเดียว');
+  const fx = (state.aiFix || []).slice(0, 8);
+  if (fx.length) L.push(`ค่าที่ผู้ใช้เคยแก้จากที่ AI ประเมิน (ร้าน/ปริมาณที่ผู้ใช้กินประจำ ใช้ปรับให้ใกล้เคียงขึ้นถ้าเป็นอาหารคล้ายกัน):\n${fx.map((f) => `- ${f.n}: AI ${f.ai} → ผู้ใช้แก้เป็น ${f.user} kcal`).join('\n')}`);
+  return L.join('\n');
+}
+async function analyzeFood(imgs, ctx) {
+  return aiProvider() === 'gemini' ? analyzeGemini(imgs, ctx) : analyzeClaude(imgs, ctx);
 }
 /* Gemini ใช้ schema แบบ OpenAPI: ไม่มี additionalProperties และชื่อ type เป็นตัวใหญ่ */
 function toGeminiSchema(s) {
@@ -1587,10 +1616,11 @@ function toGeminiSchema(s) {
   if (s.properties) { o.properties = Object.fromEntries(Object.entries(s.properties).map(([k, v]) => [k, toGeminiSchema(v)])); o.required = s.required; o.propertyOrdering = Object.keys(s.properties); }
   return o;
 }
-async function analyzeGemini(dataUrl, hint) {
+const b64 = (dataUrl) => dataUrl.split(',')[1];
+async function analyzeGemini(imgs, ctx) {
   const body = JSON.stringify({
     systemInstruction: { parts: [{ text: FOOD_PROMPT }] },
-    contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'image/jpeg', data: dataUrl.split(',')[1] } }, { text: aiUserText(hint) }] }],
+    contents: [{ role: 'user', parts: [...imgs.map((d) => ({ inlineData: { mimeType: 'image/jpeg', data: b64(d) } })), { text: aiUserText({ ...ctx, n: imgs.length }) }] }],
     generationConfig: { responseMimeType: 'application/json', responseSchema: toGeminiSchema(FOOD_SCHEMA) },
   });
   let j;
@@ -1598,7 +1628,8 @@ async function analyzeGemini(dataUrl, hint) {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': aiKey() }, body });
     j = await r.json().catch(() => ({}));
     if (r.ok) break;
-    if (r.status === 404 && model !== GEMINI_MODELS[GEMINI_MODELS.length - 1]) continue; // รุ่นนี้ถูกปิดไปแล้ว ลองรุ่นถัดไป
+    // รุ่นนี้ปิดไปแล้ว / โควตาฟรีของรุ่นนี้หมด / เซิร์ฟเวอร์ยุ่ง → ลองรุ่นถัดไป
+    if ([404, 429, 503].includes(r.status) && model !== GEMINI_MODELS[GEMINI_MODELS.length - 1]) continue;
     throw Object.assign(new Error(j.error?.message || `HTTP ${r.status}`), { status: r.status, gstatus: j.error?.status, provider: 'gemini' });
   }
   const c = j.candidates?.[0];
@@ -1608,17 +1639,17 @@ async function analyzeGemini(dataUrl, hint) {
   if (!txt) throw Object.assign(new Error('blocked'), { code: 'refusal' });
   return JSON.parse(txt);
 }
-async function analyzeClaude(dataUrl, hint) {
+async function analyzeClaude(imgs, ctx) {
   const { default: Anthropic } = await import(AI_SDK);
   const client = new Anthropic({ apiKey: aiKey(), dangerouslyAllowBrowser: true, maxRetries: 1 });
   const body = {
     model: AI_MODEL,
     max_tokens: 16000,
-    output_config: { effort: 'low', format: { type: 'json_schema', schema: FOOD_SCHEMA } },
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: FOOD_SCHEMA } },
     system: FOOD_PROMPT,
     messages: [{ role: 'user', content: [
-      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: dataUrl.split(',')[1] } },
-      { type: 'text', text: aiUserText(hint) },
+      ...imgs.map((d) => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64(d) } })),
+      { type: 'text', text: aiUserText({ ...ctx, n: imgs.length }) },
     ] }],
   };
   let res;
@@ -1641,8 +1672,10 @@ function aiErrorText(e) {
   if (!navigator.onLine || /fetch|network|import/i.test(e?.message || '')) return 'ต่อเน็ตไม่ได้ ฟีเจอร์นี้ต้องใช้อินเทอร์เน็ตนะ';
   return 'วิเคราะห์ไม่สำเร็จ ลองใหม่อีกครั้งนะ';
 }
+const MAX_AI_IMGS = 3;
 function openPhotoAI(k, slot, { setup = false } = {}) {
-  const ctx = { k, slot, step: aiKey() && !setup ? 'pick' : 'key', img: '', thumb: '', res: null, err: '', mult: 1, hint: '' };
+  const ctx = { k, slot, step: aiKey() && !setup ? 'pick' : 'key', imgs: [], res: null, err: '', mult: 1, hint: '' };
+  const hintText = () => ctx.hint.trim();
   const m = openModal('', {
     cls: 'small ai-sheet',
     onClick: (e) => {
@@ -1654,17 +1687,18 @@ function openPhotoAI(k, slot, { setup = false } = {}) {
         try { localStorage.setItem(AI_KEY, v); } catch { return toast('บันทึกคีย์ไม่ได้'); }
         ctx.step = 'pick'; toast('บันทึกคีย์แล้ว'); if (ui.tab === 'me') renderMain(false);
       }
-      if (a === 'retry') return run();
-      if (a === 'again') { ctx.step = 'pick'; ctx.img = ''; ctx.res = null; ctx.err = ''; ctx.mult = 1; }
+      if (a === 'rm-img') ctx.imgs.splice(+b.dataset.i, 1);
+      if (a === 'go' || a === 'retry') return run();
+      if (a === 'again') { ctx.step = 'pick'; ctx.imgs = []; ctx.res = null; ctx.err = ''; ctx.mult = 1; ctx.hint = ''; }
+      if (a === 'refine') { ctx.step = 'ready'; ctx.mult = 1; }
       if (a === 'slot') ctx.slot = b.dataset.v;
       if (a === 'mult') ctx.mult = Math.max(0.25, Math.min(4, ctx.mult + +b.dataset.v));
       if (a === 'save' || a === 'edit') {
-        const r = ctx.res, kc = Math.round(r.total_kcal * ctx.mult);
-        const name = r.name;
+        const r = ctx.res, kc = Math.round(r.total_kcal * ctx.mult), name = r.name, thumb = ctx.imgs[0]?.thumb || '';
         const note = `${ctx.mult !== 1 ? `กิน ×${fmtQ(ctx.mult)} · ` : ''}AI ประเมิน: ${r.items.map((x) => `${x.name} ${x.kcal}`).join(', ')}`.slice(0, 80);
-        if (a === 'edit') { closeModal(m); openQuickLog(ctx.k, ctx.slot, null, { name, kcal: kc, img: ctx.thumb, note }); return; }
+        if (a === 'edit') { closeModal(m); openQuickLog(ctx.k, ctx.slot, null, { name, kcal: kc, img: thumb, note, aiKcal: kc }); return; }
         const day = getDay(ctx.k, true); if (!day.slots.includes(ctx.slot)) day.slots.push(ctx.slot);
-        (day.m[ctx.slot] ||= []).push({ qn: name, qk: kc, src: 'out', s: 1, eaten: ctx.k <= todayKey(), note, qi: ctx.thumb });
+        (day.m[ctx.slot] ||= []).push({ qn: name, qk: kc, src: 'out', s: 1, eaten: ctx.k <= todayKey(), note, qi: thumb });
         if (!save()) { day.m[ctx.slot].pop(); return; }
         closeModal(m); refreshAll(); toast(`บันทึก ${name} ${fmt(kc)} kcal แล้ว`); return;
       }
@@ -1672,24 +1706,29 @@ function openPhotoAI(k, slot, { setup = false } = {}) {
     },
   });
   m.sheet.addEventListener('change', async (e) => {
-    const t = e.target; if (!t.matches('.ai-file') || !t.files[0]) return;
-    try { [ctx.img, ctx.thumb] = await Promise.all([resizeImage(t.files[0], 1024), resizeImage(t.files[0], 240)]); }
-    catch { toast('เปิดรูปนี้ไม่ได้'); return; }
-    t.value = ''; run();
+    const t = e.target; if (!t.matches('.ai-file') || !t.files.length) return;
+    for (const f of [...t.files].slice(0, MAX_AI_IMGS - ctx.imgs.length)) {
+      try { const [img, thumb] = await Promise.all([resizeImage(f, 1024), resizeImage(f, 240)]); ctx.imgs.push({ img, thumb }); }
+      catch { toast('เปิดรูปนี้ไม่ได้'); }
+    }
+    t.value = '';
+    if (ctx.imgs.length) { ctx.step = 'ready'; draw(); }
   });
   m.sheet.addEventListener('input', (e) => { if (e.target.id === 'ai-hint') ctx.hint = e.target.value; });
   async function run() {
+    if (!ctx.imgs.length) return;
     ctx.step = 'busy'; ctx.err = ''; draw();
     try {
-      ctx.res = await analyzeFood(ctx.img, ctx.hint.trim());
+      ctx.res = await analyzeFood(ctx.imgs.map((x) => x.img), { hint: hintText(), slot: ctx.slot });
       ctx.step = ctx.res.is_food ? 'done' : 'notfood';
     } catch (e) { ctx.err = aiErrorText(e); ctx.step = 'error'; }
     if (modals.includes(m)) draw();
   }
   const CONF = { low: ['ไม่ค่อยแน่ใจ', 'low'], medium: ['ค่อนข้างแน่ใจ', 'mid'], high: ['มั่นใจ', 'high'] };
   function draw() {
-    const head = `<div class="modal-head"><div><p class="eyebrow">${ic('spark')} AI นับแคลอรี่ · ${ctx.k === todayKey() ? 'วันนี้' : dayLabel(ctx.k)}</p><h3>${{ key: 'ตั้งค่าครั้งแรก', pick: 'ถ่ายรูปอาหาร', busy: 'กำลังดูจานนี้…', done: 'ได้ผลแล้ว', notfood: 'อืม… ไม่เจออาหาร', error: 'มีบางอย่างผิดพลาด' }[ctx.step]}</h3></div>${closeBtn}</div>`;
-    const pic = ctx.img ? `<div class="ai-pic ${ctx.step === 'busy' ? 'scan' : ''}"><img src="${ctx.img}" alt="">${ctx.step === 'busy' ? '<span class="scan-line"></span>' : ''}</div>` : '';
+    const head = `<div class="modal-head"><div><p class="eyebrow">${ic('spark')} AI นับแคลอรี่ · ${ctx.k === todayKey() ? 'วันนี้' : dayLabel(ctx.k)}</p><h3>${{ key: 'ตั้งค่าครั้งแรก', pick: 'ถ่ายรูปอาหาร', ready: 'บอก AI เพิ่มอีกนิด', busy: 'กำลังดูจานนี้…', done: 'ได้ผลแล้ว', notfood: 'อืม… ไม่เจออาหาร', error: 'มีบางอย่างผิดพลาด' }[ctx.step]}</h3></div>${closeBtn}</div>`;
+    const first = ctx.imgs[0]?.img;
+    const pic = first ? `<div class="ai-pic ${ctx.step === 'busy' ? 'scan' : ''}"><img src="${first}" alt="">${ctx.step === 'busy' ? '<span class="scan-line"></span>' : ''}${ctx.imgs.length > 1 ? `<span class="ai-more">+${ctx.imgs.length - 1}</span>` : ''}</div>` : '';
     let body = '';
     if (ctx.step === 'key') body = `<div class="ai-setup">${catSVG()}<p>ให้ AI ดูรูปแล้วประเมินแคลอรี่ ต้องใส่ <b>API key</b> ครั้งเดียว<br><small class="muted">ใช้ Gemini ของ Google ได้ <b>ฟรี</b> แค่มีบัญชี Google</small></p>
         <ol class="ai-steps"><li>เปิด <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> แล้วล็อกอินด้วยบัญชี Google</li><li>กด <b>Create API key</b> (ไม่ต้องผูกบัตร)</li><li>คัดลอกคีย์ (ขึ้นต้นด้วย <b>AQ.</b> หรือ <b>AIza</b>) มาวางด้านล่าง</li></ol>
@@ -1698,20 +1737,26 @@ function openPhotoAI(k, slot, { setup = false } = {}) {
       <div class="modal-foot"><span class="grow"></span><button class="btn ghost" data-act="close">ไว้ทีหลัง</button><button class="btn primary" data-m="save-key">${ic('check')} บันทึกคีย์</button></div>`;
     if (ctx.step === 'pick') body = `<div class="ai-pick">
         <label class="ai-shot">${ic('camera')}<b>ถ่ายรูป</b><small>ถ่ายจากด้านบน เห็นทั้งจาน</small><input class="ai-file" type="file" accept="image/*" capture="environment" hidden></label>
-        <label class="ai-shot alt">${ic('image')}<b>เลือกจากคลังรูป</b><small>รูปที่ถ่ายไว้แล้ว</small><input class="ai-file" type="file" accept="image/*" hidden></label></div>
-      <label class="field"><span>บอก AI เพิ่ม (ไม่ใส่ก็ได้)</span><input id="ai-hint" value="${esc(ctx.hint)}" placeholder="เช่น หมูกรอบ ไม่ใส่น้ำตาล กินไปครึ่งจาน" maxlength="100"></label>`;
+        <label class="ai-shot alt">${ic('image')}<b>เลือกจากคลังรูป</b><small>เลือกได้สูงสุด ${MAX_AI_IMGS} รูป</small><input class="ai-file" type="file" accept="image/*" multiple hidden></label></div>
+      <p class="ai-tip">${ic('spark')}<span><b>เคล็ดลับให้แม่นขึ้น:</b> ถ่ายให้เห็นทั้งจานพร้อมช้อนหรือแก้วข้าง ๆ ถ้าเป็นของในซอง ถ่ายฉลากโภชนาการเพิ่มอีกรูป</span></p>`;
+    if (ctx.step === 'ready') body = `<div class="ai-thumbs">${ctx.imgs.map((x, i) => `<span class="ai-th"><img src="${x.thumb}" alt=""><button class="x-btn on-photo" data-m="rm-img" data-i="${i}" aria-label="เอารูปออก">${ic('x')}</button></span>`).join('')}
+        ${ctx.imgs.length < MAX_AI_IMGS ? `<label class="ai-th add">${ic('plus')}<small>อีกมุม / ฉลาก</small><input class="ai-file" type="file" accept="image/*" multiple hidden></label>` : ''}</div>
+      <label class="field"><span>บอก AI เพิ่ม (ไม่ใส่ก็ได้)</span><textarea id="ai-hint" rows="2" placeholder="เช่น ร้านตามสั่ง จานพิเศษ กินไปครึ่งเดียว หวานน้อย" maxlength="160">${esc(ctx.hint)}</textarea></label>
+      <div class="modal-foot"><button class="btn ghost" data-m="again">${ic('camera')} เริ่มใหม่</button><span class="grow"></span><button class="btn primary" data-m="go">${ic('spark')} วิเคราะห์</button></div>`;
     if (ctx.step === 'busy') body = `${pic}<p class="ai-wait">${catSVG()}<span>แมวกำลังส่องจานอยู่ รอแป๊บนึงนะ…</span></p>`;
     if (ctx.step === 'error' || ctx.step === 'notfood') body = `${pic}<div class="warn-box ${ctx.step === 'error' ? 'allergy' : 'dislike'}">${esc(ctx.step === 'error' ? ctx.err : ctx.res?.note || 'ลองถ่ายให้เห็นอาหารชัด ๆ อีกครั้งนะ')}</div>
-      <div class="modal-foot"><button class="btn ghost" data-m="again">${ic('camera')} รูปใหม่</button><span class="grow"></span>${ctx.step === 'error' ? `<button class="btn primary" data-m="retry">ลองอีกครั้ง</button>` : ''}</div>`;
+      <div class="modal-foot"><button class="btn ghost" data-m="again">${ic('camera')} รูปใหม่</button><span class="grow"></span>${ctx.step === 'error' ? `<button class="btn primary" data-m="retry">ลองอีกครั้ง</button>` : `<button class="btn primary" data-m="refine">บอก AI เพิ่ม</button>`}</div>`;
     if (ctx.step === 'done') {
-      const r = ctx.res, c = CONF[r.confidence] || CONF.medium;
+      const r = ctx.res, c = CONF[r.confidence] || CONF.medium, told = hintText();
       body = `${pic}<div class="ai-result">
           <div class="ai-total"><div><h3>${esc(r.name)}</h3><span class="conf ${c[1]}">${c[0]}</span></div><p><b>${fmt(r.total_kcal * ctx.mult)}</b><small>kcal</small></p></div>
           <ul class="ai-items">${r.items.map((x) => `<li><span>${esc(x.name)}</span><small>${esc(x.portion)}</small><b>${fmt(x.kcal * ctx.mult)}</b></li>`).join('')}</ul>
           ${r.note ? `<p class="note small">${esc(r.note)}</p>` : ''}
-          <div class="field"><span class="lbl">กินไปเท่าไหร่</span><div class="stepper"><button class="icon-btn" data-m="mult" data-v="-0.25" aria-label="ลด">${ic('minus')}</button><b>${ctx.mult === 1 ? 'ทั้งจาน' : `×${fmtQ(ctx.mult)}`}</b><button class="icon-btn" data-m="mult" data-v="0.25" aria-label="เพิ่ม">${ic('plus')}</button></div></div>
+          ${told ? `<p class="muted small">บอก AI ไว้: ${esc(told)}</p>` : ''}
+          <button class="ai-refine" data-m="refine">${ic('edit')}<span><b>ยังไม่ตรง?</b> บอก AI เพิ่มแล้ววิเคราะห์ใหม่</span>${ic('right')}</button>
+          <div class="field"><span class="lbl">ปรับปริมาณ</span><div class="stepper"><button class="icon-btn" data-m="mult" data-v="-0.25" aria-label="ลด">${ic('minus')}</button><b>${ctx.mult === 1 ? 'ตามนี้' : `×${fmtQ(ctx.mult)}`}</b><button class="icon-btn" data-m="mult" data-v="0.25" aria-label="เพิ่ม">${ic('plus')}</button></div></div>
           <div class="field"><span class="lbl">มื้อ</span><div class="chips wrap">${SLOT_ORDER.map((s) => `<button class="chip ${ctx.slot === s ? 'on' : ''}" data-m="slot" data-v="${s}">${SLOTS[s].short}</button>`).join('')}</div></div>
-          <p class="muted small">* ค่าประมาณจาก AI อาจคลาดเคลื่อนได้ ปรับแก้ได้ก่อนบันทึก</p></div>
+          <p class="muted small">* ค่าประมาณจาก AI อาจคลาดเคลื่อนได้ ถ้ากด “แก้ไข” แล้วเปลี่ยนตัวเลข ครั้งหน้า AI จะจำไปปรับให้</p></div>
         <div class="modal-foot"><button class="btn ghost" data-m="again">${ic('camera')} รูปใหม่</button><span class="grow"></span><button class="btn ghost" data-m="edit">${ic('edit')} แก้ไข</button><button class="btn primary" data-m="save">${ic('check')} บันทึก</button></div>`;
     }
     m.sheet.innerHTML = head + body;

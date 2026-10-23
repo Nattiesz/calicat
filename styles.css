@@ -1653,3 +1653,26 @@ img { display: block; }
 .btn.fav-fill { background: var(--blush-t); color: #C2427F; border: 1px solid rgba(240, 125, 181, .4); }
 .btn.fav-fill .ic { fill: currentColor; }
 .btn.fav-fill:hover { background: rgba(240, 125, 181, .22); }
+
+/* v69: ขั้นตอน "บอก AI เพิ่ม" ก่อนวิเคราะห์ */
+.ai-tip { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 14px; background: var(--frost); font-size: 12.5px; color: var(--ink-2); line-height: 1.45; }
+.ai-tip .ic { width: 16px; height: 16px; flex: none; color: #2C7FAE; margin-top: 1px; }
+.ai-tip b { color: var(--ink); }
+.ai-thumbs { display: flex; gap: 8px; margin-bottom: 8px; }
+.ai-th { position: relative; width: 84px; height: 84px; border-radius: 18px; overflow: hidden; flex: none; background: var(--sunk); }
+.ai-th img { width: 100%; height: 100%; object-fit: cover; }
+.ai-th .x-btn.on-photo { top: 4px; right: 4px; width: 22px; height: 22px; }
+.ai-th.add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 1.5px dashed rgba(79, 35, 23, .22); background: var(--paper); cursor: pointer; color: var(--ink-2); text-align: center; }
+.ai-th.add .ic { width: 22px; height: 22px; }
+.ai-th.add small { font-size: 10.5px; line-height: 1.2; padding: 0 4px; }
+.ai-sub { margin: 4px 0 6px; }
+.ai-chiprow { margin-top: 10px; }
+.ai-chiprow .lbl { margin-bottom: 5px; }
+.ai-chiprow .chips { gap: 6px; }
+.chip.sm { padding: 5px 11px; font-size: 13px; }
+.ai-more { position: absolute; right: 18%; bottom: 10%; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, .92); font-size: 12px; font-weight: 700; }
+.ai-refine { display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 10px; padding: 10px 12px; border-radius: 14px; border: 1px dashed rgba(79, 35, 23, .2); background: var(--paper); text-align: left; font-size: 13px; color: var(--ink-2); }
+.ai-refine span { flex: 1; }
+.ai-refine b { color: var(--ink); }
+.ai-refine .ic { width: 16px; height: 16px; flex: none; }
+.ai-refine:hover { border-color: var(--sky); }
