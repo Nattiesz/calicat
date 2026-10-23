@@ -1085,8 +1085,7 @@ function openPicker(k, slot) {
   const filters = [['suggest', `เหมาะกับมื้อ${SLOTS[slot].short}`], ['fav', `${ic('heart')} โปรด`], ['all', 'ทั้งหมด'], ...Object.entries(TYPES)];
   const m = openModal(`
     <div class="modal-head"><div><p class="eyebrow">${SLOTS[slot].label} · ${dayLabel(k)}</p><h3>เลือกเมนู</h3></div>${closeBtn}</div>
-    <div class="pk-top"><label class="search">${ic('search')}<input id="pk-q" type="search" placeholder="พิมพ์ชื่อเมนู เช่น กะเพรา สลัด" autocomplete="off"></label>
-      <button class="btn soft sm" data-m="rand">${ic('dice')} สุ่มเมนูโปรด</button></div>
+    <label class="search">${ic('search')}<input id="pk-q" type="search" placeholder="พิมพ์ชื่อเมนู เช่น กะเพรา สลัด" autocomplete="off"></label>
     <div class="chips scroll" id="pk-f"></div>
     <div class="pk-added" id="pk-added"></div>
     <div class="pick-list" id="pk-list"></div>
@@ -1111,6 +1110,7 @@ function openPicker(k, slot) {
     list.sort((a, b) => (b.fav ? 1 : 0) - (a.fav ? 1 : 0));
     const exact = list.some((r) => r.name.toLowerCase() === qq.toLowerCase());
     $('#pk-list', m.sheet).innerHTML =
+      (!qq && ctx.f === 'fav' && favCount() ? `<button class="pick-row create" data-m="rand"><span class="ph md plus-ph">${ic('dice')}</span><span class="nm">สุ่มจากเมนูโปรด<small>ไม่รู้จะกินอะไร ให้แมวเลือกให้</small></span></button>` : '') +
       (qq && !exact ? `<button class="pick-row create" data-m="create"><span class="ph md plus-ph">${ic('plus')}</span><span class="nm">สร้างเมนูใหม่ “${esc(qq)}”<small>ใส่วัตถุดิบ แล้วระบบคำนวณแคลอรี่ให้</small></span></button>` : '') +
       (list.length ? list.map((r) => `<button class="pick-row" data-m="add" data-rid="${r.id}">${photo(r, 120, 'md')}
         <span class="nm"><span>${r.fav ? `<i class="fav-mark">${ic('heart')}</i>` : ''}${esc(r.name)} ${flagBadge(r, 'sm')}</span><small>${TYPES[r.type] || ''} · ${r.ing.length} วัตถุดิบ</small></span><span class="k">${fmt(perServing(r))}<small>kcal</small></span><span class="plus">${ic('plus')}</span></button>`).join('')
