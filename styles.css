@@ -1645,7 +1645,10 @@ img { display: block; }
   .page-head .head-actions .btn { flex: 1; }
   .pk-top .btn { padding: 8px 10px; }
 }
-.slot-adds { grid-template-columns: 1fr auto auto; }
+.slot-adds { grid-template-columns: 1fr 36px 36px; }
+.slot-adds .add-item { white-space: nowrap; }
+.slot-adds .add-item.log { width: 36px; padding: 7px 0; }
+.slot-adds .add-item.log .ic { width: 17px; height: 17px; }
 .ai-result .stepper b { font-size: 18px; min-width: 72px; }
 .btn.fav-fill { background: var(--blush-t); color: #C2427F; border: 1px solid rgba(240, 125, 181, .4); }
 .btn.fav-fill .ic { fill: currentColor; }
